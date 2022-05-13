@@ -8,8 +8,7 @@ import (
 
 func main() {
 	nodes := make(map[string]*protocol.Node)
-	//conn, err := protocol.NewDHTConn("dht.transmissionbt.com:6881", dht.GenerateNodeID())
-	conn, err := protocol.NewDHTConn("dht.aelitis.com:6881", dht.GenerateNodeID())
+	conn, err := protocol.NewDHTConn("dht.transmissionbt.com:6881", dht.GenerateNodeID())
 	defer conn.Close()
 	if err != nil {
 		panic(err)
@@ -76,13 +75,13 @@ func main() {
 			err := node.Connect()
 			defer node.Disconnect()
 			if err != nil {
-				fmt.Printf("Warn: Failed to connect to node %x.\n", node.NodeID)
+				fmt.Printf("Warn: Failed to connect to node %x. %s\n", node.NodeID, err.Error())
 				return
 			}
 
 			r, err := node.FindNode()
 			if err != nil {
-				fmt.Printf("Warn: Failed to find_node from %x.\n", node.NodeID)
+				fmt.Printf("Warn: Failed to find_node from %x. %s\n", node.NodeID, err.Error())
 				return
 			}
 			handleNodes(r.Nodes)
