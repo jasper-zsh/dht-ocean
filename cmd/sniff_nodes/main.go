@@ -38,7 +38,7 @@ func main() {
 			logrus.Errorf("Failed to write nodeID")
 		}
 	}
-	server, err := dht.NewDHT(":6882", nodeID)
+	server, err := dht.NewDHT(":6881", nodeID)
 	defer server.Stop()
 	if err != nil {
 		logrus.Errorf("Failed to start dht server. %v", err)
