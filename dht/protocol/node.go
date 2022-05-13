@@ -83,20 +83,33 @@ func (n *Node) FindNode(target []byte) (*FindNodeResponse, error) {
 }
 
 type PingResponse struct {
-	Tid    []byte
-	NodeID []byte
+	*Packet
 }
 
-func NewPingResponse(pkt *Packet) (*PingResponse, error) {
-	r := &PingResponse{}
-	r.Tid = pkt.GetT()
-	m := pkt.Get("r")
+func NewPingResponse(nodeID []byte) *PingResponse {
+	pkt := NewPacket()
+	pkt.SetY("r")
+	pkt.Set("a", map[string]any{"id": nodeID})
+	r := &PingResponse{pkt}
+	return r
+}
+
+func NewPingResponseFromPacket(pkt *Packet) *PingResponse {
+	r := &PingResponse{pkt}
+	return r
+}
+
+func (r *PingResponse) Tid() []byte {
+	return r.Packet.GetT()
+}
+
+func (r *PingResponse) NodeID() []byte {
+	m := r.Packet.Get("r")
 	switch m.(type) {
 	case map[string]any:
-		r.NodeID = m.(map[string]any)["id"].([]byte)
-		return r, nil
+		return m.(map[string]any)["id"].([]byte)
 	default:
-		return nil, fmt.Errorf("illegal ping response")
+		return nil
 	}
 }
 
@@ -135,7 +148,7 @@ func NewFindNodeResponse(pkt *Packet) (*FindNodeResponse, error) {
 		}
 		return r, nil
 	default:
-		return nil, fmt.Errorf("illegal packet data structure")
+		return nil, fmt.Errorf("illegal packet Data structure")
 	}
 }
 

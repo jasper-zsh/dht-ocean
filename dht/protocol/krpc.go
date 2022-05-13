@@ -3,15 +3,17 @@ package protocol
 import (
 	"dht-ocean/bencode"
 	"fmt"
+	"net"
 )
 
 type Packet struct {
-	data map[string]any
+	Data map[string]any
+	Addr *net.UDPAddr
 }
 
 func NewPacket() *Packet {
 	return &Packet{
-		data: make(map[string]any),
+		Data: make(map[string]any),
 	}
 }
 
@@ -23,7 +25,7 @@ func NewPacketFromBuffer(buf []byte) (*Packet, error) {
 	}
 	switch dict.(type) {
 	case map[string]any:
-		ret.data = dict.(map[string]any)
+		ret.Data = dict.(map[string]any)
 		return ret, nil
 	default:
 		return nil, fmt.Errorf("illegal packet: %s", buf)
@@ -31,31 +33,31 @@ func NewPacketFromBuffer(buf []byte) (*Packet, error) {
 }
 
 func (p *Packet) Encode() (string, error) {
-	return bencode.BEncode(p.data)
+	return bencode.BEncode(p.Data)
 }
 
 func (p *Packet) SetT(tid []byte) {
-	p.data["t"] = tid
+	p.Data["t"] = tid
 }
 
 func (p *Packet) SetY(y string) {
-	p.data["y"] = y
+	p.Data["y"] = y
 }
 
 func (p *Packet) SetV(v string) {
-	p.data["v"] = v
+	p.Data["v"] = v
 }
 
 func (p *Packet) Set(key string, value any) {
-	p.data[key] = value
+	p.Data[key] = value
 }
 
 func (p *Packet) SetError(code int, msg string) {
-	p.data["e"] = []any{code, msg}
+	p.Data["e"] = []any{code, msg}
 }
 
 func (p *Packet) GetT() []byte {
-	t, ok := p.data["t"]
+	t, ok := p.Data["t"]
 	if ok {
 		return t.([]byte)
 	} else {
@@ -64,7 +66,7 @@ func (p *Packet) GetT() []byte {
 }
 
 func (p *Packet) GetY() string {
-	t, ok := p.data["y"]
+	t, ok := p.Data["y"]
 	if ok {
 		return string(t.([]byte))
 	} else {
@@ -73,7 +75,7 @@ func (p *Packet) GetY() string {
 }
 
 func (p *Packet) Get(key string) interface{} {
-	t, ok := p.data[key]
+	t, ok := p.Data[key]
 	if !ok {
 		return nil
 	}
@@ -106,5 +108,5 @@ func printMap(m map[string]any, prefix string) {
 }
 
 func (p *Packet) Print() {
-	printMap(p.data, "")
+	printMap(p.Data, "")
 }

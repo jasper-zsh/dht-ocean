@@ -93,18 +93,32 @@ func (dht *DHT) listen() {
 		}
 		logrus.Debugf("Received %d bytes from udp %s", n, addr)
 		pkt, err := protocol.NewPacketFromBuffer(buf)
+		pkt.Addr = addr
 		dht.handle(pkt)
 	}
 }
 
 func (dht *DHT) handle(pkt *protocol.Packet) {
-	tid := pkt.GetT()
-	ctx := dht.transactionStorage.Get(tid)
-	if ctx == nil {
-		logrus.Warnf("Transaction %X not found, skip handlers.", tid)
-		return
-	}
-	if pkt.GetY() == "r" {
+	switch pkt.GetY() {
+	case "q":
+		switch pkt.Get("q") {
+		case "ping":
+			r := protocol.NewPingResponse(dht.nodeID)
+			r.SetT(pkt.GetT())
+			err := dht.sendPacket(pkt, pkt.Addr)
+			if err != nil {
+				logrus.Warnf("Failed to response a ping. %v", err)
+			}
+		default:
+			logrus.Warnf("Unhandled query: %s", pkt.Get("q"))
+		}
+	case "r":
+		tid := pkt.GetT()
+		ctx := dht.transactionStorage.Get(tid)
+		if ctx == nil {
+			logrus.Warnf("Transaction %X not found, skip handlers.", tid)
+			return
+		}
 		switch ctx.QueryType {
 		case "find_node":
 			res, err := protocol.NewFindNodeResponse(pkt)
@@ -122,7 +136,7 @@ func (dht *DHT) handle(pkt *protocol.Packet) {
 			logrus.Warnf("Unknown response: %s", pkt.Get("q"))
 			pkt.Print()
 		}
-	} else {
+	default:
 		logrus.Warnf("Unknown packet: %s", pkt.GetY())
 		pkt.Print()
 	}
