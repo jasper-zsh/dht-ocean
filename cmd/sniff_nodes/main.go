@@ -25,9 +25,8 @@ func main() {
 	addrsToSniff := make(chan *net.UDPAddr, 20)
 
 	AddAddrToChannel(addrsToSniff, "dht.transmissionbt.com:6881")
-	//addrsToSniff <- &protocol.Node{Addr: "dht.transmissionbt.com", Port: 6881}
-	//addrsToSniff <- &protocol.Node{Addr: "router.bittorrent.com", Port: 6881}
-	//addrsToSniff <- &protocol.Node{Addr: "router.utorrent.com", Port: 6881}
+	AddAddrToChannel(addrsToSniff, "router.bittorrent.com:6881")
+	AddAddrToChannel(addrsToSniff, "router.utorrent.com:6881")
 
 	nodeID, err := os.ReadFile("node_id")
 	if err != nil {
