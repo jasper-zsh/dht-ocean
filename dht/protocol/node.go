@@ -89,7 +89,7 @@ type PingResponse struct {
 func NewPingResponse(nodeID []byte) *PingResponse {
 	pkt := NewPacket()
 	pkt.SetY("r")
-	pkt.Set("a", map[string]any{"id": nodeID})
+	pkt.Set("r", map[string]any{"id": nodeID})
 	r := &PingResponse{pkt}
 	return r
 }
