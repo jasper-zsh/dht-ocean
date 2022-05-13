@@ -12,9 +12,11 @@ type Packet struct {
 }
 
 func NewPacket() *Packet {
-	return &Packet{
+	pkt := &Packet{
 		Data: make(map[string]any),
 	}
+	pkt.SetV("AG20")
+	return pkt
 }
 
 func NewPacketFromBuffer(buf []byte) (*Packet, error) {
