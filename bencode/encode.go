@@ -2,6 +2,7 @@ package bencode
 
 import (
 	"errors"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -35,8 +36,14 @@ func encodeBytes(builder *strings.Builder, data []byte) {
 
 func encodeMap(builder *strings.Builder, m map[string]interface{}) error {
 	builder.WriteByte('d')
-	for k, v := range m {
+	keys := make([]string, 0, len(m))
+	for k, _ := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
 		encodeString(builder, k)
+		v := m[k]
 		err := encodeAny(builder, v)
 		if err != nil {
 			return err
