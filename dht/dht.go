@@ -10,10 +10,11 @@ import (
 type FindNodeHandler func(response *protocol.FindNodeResponse) error
 
 type DHT struct {
-	conn              *net.UDPConn
-	nodeID            []byte
-	nextTransactionID uint16
-	findNodeHandlers  []FindNodeHandler
+	conn                *net.UDPConn
+	nodeID              []byte
+	nextTransactionID   uint16
+	findNodeHandlers    []FindNodeHandler
+	transactionContexts map[string]map[string]any
 }
 
 func NewDHT(addr string, nodeID []byte) (*DHT, error) {
@@ -66,7 +67,13 @@ func (dht *DHT) nextTransaction() []byte {
 
 func (dht *DHT) FindNode(target []byte, addr *net.UDPAddr) error {
 	req := protocol.NewFindNodeRequest(dht.nodeID, target)
-	req.SetT(dht.nextTransaction())
+	tid := dht.nextTransaction()
+	sTid := string(tid)
+	ctx := make(map[string]any)
+	ctx["q"] = "find_node"
+	dht.transactionContexts[sTid] = ctx
+
+	req.SetT(tid)
 	return dht.sendPacket(req.Packet, addr)
 }
 
@@ -85,13 +92,20 @@ func (dht *DHT) listen() {
 }
 
 func (dht *DHT) handle(pkt *protocol.Packet) {
+	tid := pkt.GetT()
+	sTid := string(tid)
+	ctx, ok := dht.transactionContexts[sTid]
+	if !ok {
+		logrus.Warnf("Transaction %X not found, skip handlers.", tid)
+		return
+	}
 	if pkt.GetY() == "r" {
-		q := pkt.Get("q")
-		if q == nil {
-			pkt.Print()
+		q, ok := ctx["q"]
+		if !ok {
+			logrus.Errorf("query type not in transaction context, check program logic.")
 			return
 		}
-		switch string(q.([]byte)) {
+		switch q.(string) {
 		case "find_node":
 			res, err := protocol.NewFindNodeResponse(pkt)
 			if err != nil {
