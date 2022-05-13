@@ -68,7 +68,7 @@ func (dht *DHT) nextTransaction() []byte {
 }
 
 func (dht *DHT) FindNode(node *protocol.Node, target []byte) error {
-	req := protocol.NewFindNodeRequest(node.NodeID, target)
+	req := protocol.NewFindNodeRequest(dht.nodeID, target)
 	tid := dht.nextTransaction()
 	ctx := make(map[string]any)
 	ctx["q"] = "find_node"
