@@ -23,8 +23,9 @@ func NewDHT(addr string, nodeID []byte) (*DHT, error) {
 		return nil, err
 	}
 	dht := &DHT{
-		conn:   conn.(*net.UDPConn),
-		nodeID: nodeID,
+		conn:                conn.(*net.UDPConn),
+		nodeID:              nodeID,
+		transactionContexts: make(map[string]map[string]any),
 	}
 	return dht, nil
 }
