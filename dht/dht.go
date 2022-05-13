@@ -113,6 +113,7 @@ func (dht *DHT) handle(pkt *protocol.Packet) {
 			}
 		default:
 			logrus.Warnf("Unhandled query: %s", pkt.Get("q"))
+			pkt.Print()
 		}
 	case "r":
 		tid := pkt.GetT()
