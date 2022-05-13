@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math/rand"
+	"net"
 	"strconv"
 )
 
@@ -47,6 +48,14 @@ func (n *Node) GetPort() int {
 	return (int)(binary.BigEndian.Uint16(n.rawPort))
 }
 
+func (n *Node) GetUDPAddr() (*net.UDPAddr, error) {
+	addr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%d", n.Addr, n.Port))
+	if err != nil {
+		return nil, err
+	}
+	return addr, nil
+}
+
 func (n *Node) Connect() error {
 	conn, err := NewDHTConn(fmt.Sprintf("%s:%d", n.Addr, n.Port), n.NodeID)
 	if err != nil {
@@ -80,6 +89,19 @@ func (n *Node) FindNode(target []byte) (*FindNodeResponse, error) {
 		return nil, err
 	}
 	return r, nil
+}
+
+type PingRequest struct {
+	*Packet
+}
+
+func NewPingRequest(nodeID []byte) *PingRequest {
+	pkt := NewPacket()
+	pkt.SetY("q")
+	pkt.Set("q", "ping")
+	pkt.Set("a", map[string]any{"id": nodeID})
+	r := &PingRequest{pkt}
+	return r
 }
 
 type PingResponse struct {

@@ -2,7 +2,6 @@ package dht
 
 import (
 	"dht-ocean/dht/protocol"
-	"fmt"
 	"github.com/sirupsen/logrus"
 	"net"
 	"time"
@@ -10,12 +9,14 @@ import (
 )
 
 type FindNodeHandler func(response *protocol.FindNodeResponse) error
+type PingHandler func(response *protocol.PingResponse) error
 
 type DHT struct {
 	conn               *net.UDPConn
 	nodeID             []byte
 	nextTransactionID  uint16
 	findNodeHandlers   []FindNodeHandler
+	pingHandlers       []PingHandler
 	transactionStorage TransactionStorage
 }
 
@@ -44,6 +45,10 @@ func (dht *DHT) RegisterFindNodeHandler(handler FindNodeHandler) {
 	dht.findNodeHandlers = append(dht.findNodeHandlers, handler)
 }
 
+func (dht *DHT) RegisterPingHandler(handler PingHandler) {
+	dht.pingHandlers = append(dht.pingHandlers, handler)
+}
+
 func (dht *DHT) send(data []byte, addr *net.UDPAddr) error {
 	_ = dht.conn.SetWriteDeadline(time.Now().Add(time.Second * 10))
 	sent, err := dht.conn.WriteToUDP(data, addr)
@@ -69,6 +74,21 @@ func (dht *DHT) nextTransaction() []byte {
 	return []byte{tid[0], tid[1]}
 }
 
+func (dht *DHT) Ping(node *protocol.Node) error {
+	req := protocol.NewPingRequest(dht.nodeID)
+	tid := dht.nextTransaction()
+	dht.transactionStorage.Add(&TransactionContext{
+		Tid:       tid,
+		QueryType: "ping",
+	})
+	req.SetT(tid)
+	addr, err := node.GetUDPAddr()
+	if err != nil {
+		return err
+	}
+	return dht.sendPacket(req.Packet, addr)
+}
+
 func (dht *DHT) FindNode(node *protocol.Node, target []byte) error {
 	req := protocol.NewFindNodeRequest(dht.nodeID, target)
 	tid := dht.nextTransaction()
@@ -78,7 +98,7 @@ func (dht *DHT) FindNode(node *protocol.Node, target []byte) error {
 	})
 
 	req.SetT(tid)
-	addr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%d", node.Addr, node.Port))
+	addr, err := node.GetUDPAddr()
 	if err != nil {
 		return err
 	}
@@ -140,6 +160,14 @@ func (dht *DHT) handle(pkt *protocol.Packet) {
 				err := handler(res)
 				if err != nil {
 					logrus.Warnf("Failed to handle find_node response. %v", err)
+				}
+			}
+		case "ping":
+			res := protocol.NewPingResponseFromPacket(pkt)
+			for _, handler := range dht.pingHandlers {
+				err := handler(res)
+				if err != nil {
+					logrus.Warnf("Failed to handle ping response. %v", err)
 				}
 			}
 		default:

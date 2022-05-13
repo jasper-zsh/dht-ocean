@@ -40,6 +40,20 @@ func main() {
 		logrus.Errorf("Failed to start dht server. %v", err)
 		panic(err)
 	}
+	server.RegisterPingHandler(func(response *protocol.PingResponse) error {
+		node := &protocol.Node{
+			NodeID: response.NodeID(),
+			Addr:   response.Addr.IP.String(),
+			Port:   response.Addr.Port,
+		}
+		id := string(node.NodeID)
+		nodes[id] = node
+		err := server.FindNode(node, protocol.GenerateNodeID())
+		if err != nil {
+			logrus.Errorf("Failed to send find_node query. %v", err)
+		}
+		return nil
+	})
 	server.RegisterFindNodeHandler(func(response *protocol.FindNodeResponse) error {
 		newNodes := make([]*protocol.Node, 0, len(response.Nodes))
 		for _, node := range response.Nodes {
@@ -50,8 +64,9 @@ func main() {
 			}
 		}
 		for _, node := range newNodes {
-			id := string(node.NodeID)
-			nodes[id] = node
+			if err != nil {
+				logrus.Warnf("Failed to ping node %s:%d", node.Addr, node.Port)
+			}
 			NodesToSniff <- node
 		}
 		logrus.Infof("Found %d new nodes Total %d nodes Queued %d nodes.", len(newNodes), len(nodes), len(NodesToSniff))
@@ -62,9 +77,11 @@ func main() {
 
 	for {
 		node := <-NodesToSniff
-		err := server.FindNode(node, protocol.GenerateNodeID())
+		err := server.Ping(node)
 		if err != nil {
-			logrus.Errorf("Failed to send find_node query. %v", err)
+			logrus.Errorf("Failed to ping. %v", err)
 		}
+		//err := server.FindNode(node, protocol.GenerateNodeID())
+
 	}
 }
