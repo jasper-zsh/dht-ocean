@@ -42,6 +42,7 @@ func encodeMap(builder *strings.Builder, m map[string]interface{}) error {
 			return err
 		}
 	}
+	builder.WriteByte('e')
 	return nil
 }
 
