@@ -84,8 +84,12 @@ func (dht *DHT) listen() {
 
 func (dht *DHT) handle(pkt *protocol.Packet) {
 	if pkt.GetY() == "r" {
-		q := pkt.Get("q").([]byte)
-		switch string(q) {
+		q := pkt.Get("q")
+		if q == nil {
+			pkt.Print()
+			return
+		}
+		switch string(q.([]byte)) {
 		case "find_node":
 			res, err := protocol.NewFindNodeResponse(pkt)
 			if err != nil {
