@@ -54,6 +54,7 @@ func (dht *DHT) sendPacket(pkt *protocol.Packet, addr *net.UDPAddr) error {
 	if err != nil {
 		return err
 	}
+	logrus.Debugf("Send packet with Tid %X", pkt.GetT())
 	return dht.send([]byte(encoded), addr)
 }
 
