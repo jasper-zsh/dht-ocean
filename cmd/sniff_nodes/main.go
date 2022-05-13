@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/sirupsen/logrus"
 	"net"
+	"os"
 )
 
 func AddAddrToChannel(ch chan *net.UDPAddr, addr string) {
@@ -28,7 +29,17 @@ func main() {
 	//addrsToSniff <- &protocol.Node{Addr: "router.bittorrent.com", Port: 6881}
 	//addrsToSniff <- &protocol.Node{Addr: "router.utorrent.com", Port: 6881}
 
-	server, err := dht.NewDHT(":6882", protocol.GenerateNodeID())
+	nodeID, err := os.ReadFile("node_id")
+	if err != nil {
+		logrus.Warnf("Cannot read nodeID, generated randomly.")
+		nodeID = protocol.GenerateNodeID()
+		err = os.WriteFile("node_id", nodeID, 0666)
+		if err != nil {
+			logrus.Errorf("Failed to write nodeID")
+		}
+	}
+	server, err := dht.NewDHT(":6882", nodeID)
+	defer server.Stop()
 	if err != nil {
 		logrus.Errorf("Failed to start dht server. %v", err)
 		panic(err)
