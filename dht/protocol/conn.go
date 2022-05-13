@@ -3,7 +3,6 @@ package protocol
 import (
 	"dht-ocean/dht"
 	"net"
-	"time"
 	"unsafe"
 )
 
@@ -29,7 +28,6 @@ func NewDHTConn(addr string, nodeId []byte) (*DHTConn, error) {
 	if err != nil {
 		return nil, err
 	}
-	conn.SetDeadline(time.Now().Add(time.Second * 10))
 	ret.conn = conn
 
 	return ret, nil
