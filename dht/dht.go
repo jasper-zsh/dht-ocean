@@ -66,6 +66,7 @@ func (dht *DHT) nextTransaction() []byte {
 
 func (dht *DHT) FindNode(target []byte, addr *net.UDPAddr) error {
 	req := protocol.NewFindNodeRequest(dht.nodeID, target)
+	req.SetT(dht.nextTransaction())
 	return dht.sendPacket(req.Packet, addr)
 }
 
