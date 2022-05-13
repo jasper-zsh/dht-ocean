@@ -10,11 +10,11 @@ import (
 type FindNodeHandler func(response *protocol.FindNodeResponse) error
 
 type DHT struct {
-	conn                *net.UDPConn
-	nodeID              []byte
-	nextTransactionID   uint16
-	findNodeHandlers    []FindNodeHandler
-	transactionContexts map[string]map[string]any
+	conn               *net.UDPConn
+	nodeID             []byte
+	nextTransactionID  uint16
+	findNodeHandlers   []FindNodeHandler
+	transactionStorage TransactionStorage
 }
 
 func NewDHT(addr string, nodeID []byte) (*DHT, error) {
@@ -23,9 +23,9 @@ func NewDHT(addr string, nodeID []byte) (*DHT, error) {
 		return nil, err
 	}
 	dht := &DHT{
-		conn:                conn.(*net.UDPConn),
-		nodeID:              nodeID,
-		transactionContexts: make(map[string]map[string]any),
+		conn:               conn.(*net.UDPConn),
+		nodeID:             nodeID,
+		transactionStorage: make(TransactionStorage),
 	}
 	return dht, nil
 }
@@ -69,10 +69,12 @@ func (dht *DHT) nextTransaction() []byte {
 func (dht *DHT) FindNode(target []byte, addr *net.UDPAddr) error {
 	req := protocol.NewFindNodeRequest(dht.nodeID, target)
 	tid := dht.nextTransaction()
-	sTid := string(tid)
 	ctx := make(map[string]any)
 	ctx["q"] = "find_node"
-	dht.transactionContexts[sTid] = ctx
+	dht.transactionStorage.Add(&TransactionContext{
+		Tid:       tid,
+		QueryType: "find_node",
+	})
 
 	req.SetT(tid)
 	return dht.sendPacket(req.Packet, addr)
@@ -94,19 +96,13 @@ func (dht *DHT) listen() {
 
 func (dht *DHT) handle(pkt *protocol.Packet) {
 	tid := pkt.GetT()
-	sTid := string(tid)
-	ctx, ok := dht.transactionContexts[sTid]
-	if !ok {
+	ctx := dht.transactionStorage.Get(tid)
+	if ctx == nil {
 		logrus.Warnf("Transaction %X not found, skip handlers.", tid)
 		return
 	}
 	if pkt.GetY() == "r" {
-		q, ok := ctx["q"]
-		if !ok {
-			logrus.Errorf("query type not in transaction context, check program logic.")
-			return
-		}
-		switch q.(string) {
+		switch ctx.QueryType {
 		case "find_node":
 			res, err := protocol.NewFindNodeResponse(pkt)
 			if err != nil {
