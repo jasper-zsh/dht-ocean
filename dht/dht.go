@@ -2,6 +2,7 @@ package dht
 
 import (
 	"dht-ocean/dht/protocol"
+	"fmt"
 	"github.com/sirupsen/logrus"
 	"net"
 	"unsafe"
@@ -66,8 +67,8 @@ func (dht *DHT) nextTransaction() []byte {
 	return []byte{tid[0], tid[1]}
 }
 
-func (dht *DHT) FindNode(target []byte, addr *net.UDPAddr) error {
-	req := protocol.NewFindNodeRequest(dht.nodeID, target)
+func (dht *DHT) FindNode(node *protocol.Node, target []byte) error {
+	req := protocol.NewFindNodeRequest(node.NodeID, target)
 	tid := dht.nextTransaction()
 	ctx := make(map[string]any)
 	ctx["q"] = "find_node"
@@ -77,6 +78,10 @@ func (dht *DHT) FindNode(target []byte, addr *net.UDPAddr) error {
 	})
 
 	req.SetT(tid)
+	addr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%d", node.Addr, node.Port))
+	if err != nil {
+		return err
+	}
 	return dht.sendPacket(req.Packet, addr)
 }
 

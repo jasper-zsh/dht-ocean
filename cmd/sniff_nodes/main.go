@@ -3,30 +3,23 @@ package main
 import (
 	"dht-ocean/dht"
 	"dht-ocean/dht/protocol"
-	"fmt"
 	"github.com/sirupsen/logrus"
-	"net"
 	"os"
 )
 
-func AddAddrToChannel(ch chan *net.UDPAddr, addr string) {
-	a, err := net.ResolveUDPAddr("udp", addr)
-	if err != nil {
-		logrus.Errorf("Failed to resolve addr: %s", addr)
-		return
+func AddNodeToChannel(ch chan *protocol.Node, nodeID []byte, addr string, port int) {
+	ch <- &protocol.Node{
+		NodeID: nodeID,
+		Addr:   addr,
+		Port:   port,
 	}
-	ch <- a
 }
 
 func main() {
 	logrus.SetLevel(logrus.DebugLevel)
 
 	nodes := make(map[string]*protocol.Node)
-	addrsToSniff := make(chan *net.UDPAddr, 20)
-
-	AddAddrToChannel(addrsToSniff, "dht.transmissionbt.com:6881")
-	AddAddrToChannel(addrsToSniff, "router.bittorrent.com:6881")
-	AddAddrToChannel(addrsToSniff, "router.utorrent.com:6881")
+	NodesToSniff := make(chan *protocol.Node, 20)
 
 	nodeID, err := os.ReadFile("node_id")
 	if err != nil {
@@ -37,6 +30,10 @@ func main() {
 			logrus.Errorf("Failed to write nodeID")
 		}
 	}
+	AddNodeToChannel(NodesToSniff, nodeID, "dht.transmissionbt.com", 6881)
+	AddNodeToChannel(NodesToSniff, nodeID, "router.bittorrent.com", 6881)
+	AddNodeToChannel(NodesToSniff, nodeID, "router.utorrent.com", 6881)
+
 	server, err := dht.NewDHT(":6881", nodeID)
 	defer server.Stop()
 	if err != nil {
@@ -49,22 +46,18 @@ func main() {
 			_, ok := nodes[id]
 			if !ok {
 				nodes[id] = node
-				addr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%d", node.Addr, node.Port))
-				if err != nil {
-					return err
-				}
-				addrsToSniff <- addr
+				NodesToSniff <- node
 			}
 		}
-		logrus.Infof("Found %d nodes Total %d nodes Queued %d nodes.", len(response.Nodes), len(nodes), len(addrsToSniff))
+		logrus.Infof("Found %d nodes Total %d nodes Queued %d nodes.", len(response.Nodes), len(nodes), len(NodesToSniff))
 		return nil
 	})
 
 	server.Run()
 
 	for {
-		addr := <-addrsToSniff
-		err := server.FindNode(protocol.GenerateNodeID(), addr)
+		node := <-NodesToSniff
+		err := server.FindNode(node, protocol.GenerateNodeID())
 		if err != nil {
 			logrus.Errorf("Failed to send find_node query. %v", err)
 		}
