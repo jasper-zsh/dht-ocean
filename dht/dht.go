@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/sirupsen/logrus"
 	"net"
+	"time"
 	"unsafe"
 )
 
@@ -44,6 +45,7 @@ func (dht *DHT) RegisterFindNodeHandler(handler FindNodeHandler) {
 }
 
 func (dht *DHT) send(data []byte, addr *net.UDPAddr) error {
+	_ = dht.conn.SetWriteDeadline(time.Now().Add(time.Second * 10))
 	sent, err := dht.conn.WriteToUDP(data, addr)
 	if err != nil {
 		return err
@@ -117,6 +119,7 @@ func (dht *DHT) handle(pkt *protocol.Packet) {
 		ctx := dht.transactionStorage.Get(tid)
 		if ctx == nil {
 			logrus.Warnf("Transaction %X not found, skip handlers.", tid)
+			pkt.Print()
 			return
 		}
 		switch ctx.QueryType {
