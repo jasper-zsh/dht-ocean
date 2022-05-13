@@ -103,7 +103,13 @@ func (dht *DHT) listen() {
 func (dht *DHT) handle(pkt *protocol.Packet) {
 	switch pkt.GetY() {
 	case "q":
-		switch pkt.Get("q") {
+		q := pkt.Get("q")
+		if q == nil {
+			logrus.Warnf("Illegal incoming query with no query type.")
+			pkt.Print()
+			return
+		}
+		switch string(q.([]byte)) {
 		case "ping":
 			r := protocol.NewPingResponse(dht.nodeID)
 			r.SetT(pkt.GetT())
@@ -112,7 +118,7 @@ func (dht *DHT) handle(pkt *protocol.Packet) {
 				logrus.Warnf("Failed to response a ping. %v", err)
 			}
 		default:
-			logrus.Warnf("Unhandled query: %s", pkt.Get("q"))
+			logrus.Warnf("Unhandled query: %s", q)
 			pkt.Print()
 		}
 	case "r":
