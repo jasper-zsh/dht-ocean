@@ -66,7 +66,7 @@ func (p *Packet) GetT() []byte {
 func (p *Packet) GetY() string {
 	t, ok := p.data["y"]
 	if ok {
-		return t.(string)
+		return string(t.([]byte))
 	} else {
 		return ""
 	}
