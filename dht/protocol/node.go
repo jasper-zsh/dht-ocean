@@ -47,8 +47,11 @@ func (n *Node) Disconnect() error {
 	return n.conn.Close()
 }
 
-func (n *Node) FindNode() (*FindNodeResponse, error) {
-	err := n.conn.FindNode(n.NodeID)
+func (n *Node) FindNode(target []byte) (*FindNodeResponse, error) {
+	if target == nil {
+		target = dht.GenerateNodeID()
+	}
+	err := n.conn.FindNode(target)
 	if err != nil {
 		return nil, err
 	}
@@ -57,6 +60,7 @@ func (n *Node) FindNode() (*FindNodeResponse, error) {
 	if err != nil {
 		return nil, err
 	}
+	pkt.Print()
 
 	r, err := NewFindNodeResponse(pkt)
 	if err != nil {

@@ -9,6 +9,7 @@ import (
 func main() {
 	nodes := make(map[string]*protocol.Node)
 	conn, err := protocol.NewDHTConn("dht.transmissionbt.com:6881", dht.GenerateNodeID())
+	//conn, err := protocol.NewDHTConn("dht.transmissionbt.com:6881", []byte("0123456789abcdefghij"))
 	defer conn.Close()
 	if err != nil {
 		panic(err)
@@ -16,25 +17,9 @@ func main() {
 
 	nodesToSniff := make(chan string, 20)
 
-	fmt.Println("Sending ping query...")
-	err = conn.Ping()
-	if err != nil {
-		fmt.Printf("ERROR: Failed to send ping query. %s\n", err.Error())
-		return
-	}
-	pkt, err := conn.ReadPacket()
-	if err != nil {
-		fmt.Printf("ERROR: Failed to handle ping response. %s\n", err.Error())
-		return
-	}
-	pkt.Print()
-	pong, err := protocol.NewPingResponse(pkt)
-	if err != nil {
-		fmt.Printf("ERROR: Failed to parse ping response. %s\n", err.Error())
-		return
-	}
+	fmt.Println("Sending initial find_node query...")
 
-	err = conn.FindNode(pong.NodeID)
+	err = conn.FindNode(dht.GenerateNodeID())
 	if err != nil {
 		fmt.Printf("ERROR: Failed to send initial find_node query. %s\n", err.Error())
 		return
@@ -61,7 +46,7 @@ func main() {
 		handleNodes(r.Nodes)
 	}
 
-	pkt, err = conn.ReadPacket()
+	pkt, err := conn.ReadPacket()
 	if err != nil {
 		fmt.Printf("ERROR: Failed to parse initial find_node response. %s\n", err.Error())
 		return
@@ -79,7 +64,7 @@ func main() {
 				return
 			}
 
-			r, err := node.FindNode()
+			r, err := node.FindNode(nil)
 			if err != nil {
 				fmt.Printf("Warn: Failed to find_node from %x. %s\n", node.NodeID, err.Error())
 				return
