@@ -14,6 +14,8 @@ const (
 type Node struct {
 	rawIP   []byte
 	rawPort []byte
+	Addr    string
+	Port    int
 	NodeID  []byte
 	conn    *DHTConn
 }
@@ -23,11 +25,13 @@ func NewNodeFromRaw(raw []byte) (*Node, error) {
 	node.NodeID = raw[:20]
 	node.rawIP = raw[20:24]
 	node.rawPort = raw[24:26]
+	node.Addr = node.GetIP()
+	node.Port = node.GetPort()
 	return node, nil
 }
 
 func (n *Node) GetIP() string {
-	return fmt.Sprintf("%d.%d.%d.%d", n.rawIP[3], n.rawIP[2], n.rawIP[1], n.rawIP[0])
+	return fmt.Sprintf("%d.%d.%d.%d", n.rawIP[0], n.rawIP[1], n.rawIP[2], n.rawIP[3])
 }
 
 func (n *Node) GetPort() int {
@@ -35,7 +39,7 @@ func (n *Node) GetPort() int {
 }
 
 func (n *Node) Connect() error {
-	conn, err := NewDHTConn(fmt.Sprintf("%s:%d", n.GetIP(), n.GetPort()), n.NodeID)
+	conn, err := NewDHTConn(fmt.Sprintf("%s:%d", n.Addr, n.Port), n.NodeID)
 	if err != nil {
 		return err
 	}

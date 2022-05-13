@@ -1,29 +1,17 @@
 package main
 
 import (
-	"dht-ocean/dht"
 	"dht-ocean/dht/protocol"
 	"fmt"
 )
 
 func main() {
 	nodes := make(map[string]*protocol.Node)
-	conn, err := protocol.NewDHTConn("dht.transmissionbt.com:6881", dht.GenerateNodeID())
-	//conn, err := protocol.NewDHTConn("dht.transmissionbt.com:6881", []byte("0123456789abcdefghij"))
-	defer conn.Close()
-	if err != nil {
-		panic(err)
-	}
+	nodesToSniff := make(chan *protocol.Node, 20)
 
-	nodesToSniff := make(chan string, 20)
-
-	fmt.Println("Sending initial find_node query...")
-
-	err = conn.FindNode(dht.GenerateNodeID())
-	if err != nil {
-		fmt.Printf("ERROR: Failed to send initial find_node query. %s\n", err.Error())
-		return
-	}
+	nodesToSniff <- &protocol.Node{Addr: "dht.transmissionbt.com", Port: 6881}
+	nodesToSniff <- &protocol.Node{Addr: "router.bittorrent.com", Port: 6881}
+	nodesToSniff <- &protocol.Node{Addr: "router.utorrent.com", Port: 6881}
 
 	handleNodes := func(list []*protocol.Node) {
 		fmt.Printf("Found %d nodes total %d.\n", len(list), len(nodes))
@@ -32,30 +20,13 @@ func main() {
 			_, ok := nodes[id]
 			if !ok {
 				nodes[id] = node
-				nodesToSniff <- id
+				nodesToSniff <- node
 			}
 		}
 	}
 
-	handleFindNode := func(pkt *dht.Packet) {
-		r, err := protocol.NewFindNodeResponse(pkt)
-		if err != nil {
-			fmt.Printf("ERROR: Failed to parse find_node response. %s", err.Error())
-			return
-		}
-		handleNodes(r.Nodes)
-	}
-
-	pkt, err := conn.ReadPacket()
-	if err != nil {
-		fmt.Printf("ERROR: Failed to parse initial find_node response. %s\n", err.Error())
-		return
-	}
-	handleFindNode(pkt)
-
 	for {
-		id := <-nodesToSniff
-		node := nodes[id]
+		node := <-nodesToSniff
 		go func() {
 			err := node.Connect()
 			defer node.Disconnect()
@@ -66,7 +37,7 @@ func main() {
 
 			r, err := node.FindNode(nil)
 			if err != nil {
-				fmt.Printf("Warn: Failed to find_node from %x. %s\n", node.NodeID, err.Error())
+				fmt.Printf("Warn: Failed to find_node from %s:%d. %s\n", node.Addr, node.Port, err.Error())
 				return
 			}
 			handleNodes(r.Nodes)
