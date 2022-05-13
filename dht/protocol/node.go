@@ -40,7 +40,7 @@ func NewNodeFromRaw(raw []byte) (*Node, error) {
 }
 
 func (n *Node) GetIP() string {
-	return fmt.Sprintf("%d.%d.%d.%d", n.rawIP[3], n.rawIP[2], n.rawIP[1], n.rawIP[0])
+	return fmt.Sprintf("%d.%d.%d.%d", n.rawIP[0], n.rawIP[1], n.rawIP[2], n.rawIP[3])
 }
 
 func (n *Node) GetPort() int {
