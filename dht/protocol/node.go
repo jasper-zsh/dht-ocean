@@ -1,15 +1,24 @@
 package protocol
 
 import (
-	"dht-ocean/dht"
+	"crypto/sha1"
 	"encoding/binary"
 	"fmt"
-	"github.com/elliotchance/orderedmap"
+	"math/rand"
+	"strconv"
 )
 
 const (
 	rawNodeLength = 26
 )
+
+func GenerateNodeID() []byte {
+	hash := sha1.New()
+	for i := 0; i < 32; i++ {
+		hash.Write([]byte(strconv.Itoa(rand.Int())))
+	}
+	return hash.Sum(nil)
+}
 
 type Node struct {
 	rawIP   []byte
@@ -53,7 +62,7 @@ func (n *Node) Disconnect() error {
 
 func (n *Node) FindNode(target []byte) (*FindNodeResponse, error) {
 	if target == nil {
-		target = dht.GenerateNodeID()
+		target = GenerateNodeID()
 	}
 	err := n.conn.FindNode(target)
 	if err != nil {
@@ -78,17 +87,29 @@ type PingResponse struct {
 	NodeID []byte
 }
 
-func NewPingResponse(pkt *dht.Packet) (*PingResponse, error) {
+func NewPingResponse(pkt *Packet) (*PingResponse, error) {
 	r := &PingResponse{}
 	r.Tid = pkt.GetT()
 	m := pkt.Get("r")
 	switch m.(type) {
-	case *orderedmap.OrderedMap:
-		r.NodeID = m.(*orderedmap.OrderedMap).GetOrDefault("id", []byte{}).([]byte)
+	case map[string]any:
+		r.NodeID = m.(map[string]any)["id"].([]byte)
 		return r, nil
 	default:
 		return nil, fmt.Errorf("illegal ping response")
 	}
+}
+
+type FindNodeRequest struct {
+	*Packet
+}
+
+func NewFindNodeRequest(nodeID, target []byte) *FindNodeRequest {
+	pkt := NewPacket()
+	pkt.SetY("q")
+	pkt.Set("q", "find_node")
+	pkt.Set("a", map[string]any{"id": nodeID, "target": target})
+	return &FindNodeRequest{pkt}
 }
 
 type FindNodeResponse struct {
@@ -97,14 +118,14 @@ type FindNodeResponse struct {
 	Nodes        []*Node
 }
 
-func NewFindNodeResponse(pkt *dht.Packet) (*FindNodeResponse, error) {
+func NewFindNodeResponse(pkt *Packet) (*FindNodeResponse, error) {
 	r := &FindNodeResponse{}
 	r.Tid = pkt.GetT()
 	rMap := pkt.Get("r")
 	switch rMap.(type) {
-	case *orderedmap.OrderedMap:
-		r.TargetNodeID = rMap.(*orderedmap.OrderedMap).GetOrDefault("id", []byte{}).([]byte)
-		rawNodes := rMap.(*orderedmap.OrderedMap).GetOrDefault("nodes", []byte{}).([]byte)
+	case map[string]any:
+		r.TargetNodeID = rMap.(map[string]any)["id"].([]byte)
+		rawNodes := rMap.(map[string]any)["nodes"].([]byte)
 		for i := 0; i*rawNodeLength < len(rawNodes); i++ {
 			node, err := NewNodeFromRaw(rawNodes[i : i+rawNodeLength])
 			if err != nil {

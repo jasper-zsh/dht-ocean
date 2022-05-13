@@ -1,4 +1,4 @@
-package dht
+package protocol
 
 import (
 	"github.com/stretchr/testify/assert"

@@ -1,13 +1,12 @@
 package protocol
 
 import (
-	"dht-ocean/dht"
 	"net"
 	"time"
 	"unsafe"
 )
 
-type DHTResponseHandler func(pkt *dht.Packet)
+type DHTResponseHandler func(pkt *Packet)
 
 type DHTConn struct {
 	conn              *net.UDPConn
@@ -53,13 +52,13 @@ func (c *DHTConn) RegisterResponseHandler(queryType string, h DHTResponseHandler
 	c.responseHandlers[queryType] = append(c.responseHandlers[queryType], h)
 }
 
-func (c *DHTConn) ReadPacket() (*dht.Packet, error) {
+func (c *DHTConn) ReadPacket() (*Packet, error) {
 	buf := make([]byte, 4096)
 	_, _, err := c.conn.ReadFromUDP(buf)
 	if err != nil {
 		return nil, err
 	}
-	pkt, err := dht.NewPacketFromBuffer(buf)
+	pkt, err := NewPacketFromBuffer(buf)
 	if err != nil {
 		return nil, err
 	}
@@ -67,10 +66,10 @@ func (c *DHTConn) ReadPacket() (*dht.Packet, error) {
 }
 
 func (c *DHTConn) Ping() error {
-	pkt := dht.NewPacket()
+	pkt := NewPacket()
 	pkt.SetY("q")
-	pkt.SetKey("q", "ping")
-	pkt.SetKey("a", map[string]interface{}{"id": c.nodeId})
+	pkt.Set("q", "ping")
+	pkt.Set("a", map[string]interface{}{"id": c.nodeId})
 	pkt.SetT(c.nextTransaction())
 	encoded, err := pkt.Encode()
 	if err != nil {
@@ -84,11 +83,11 @@ func (c *DHTConn) Ping() error {
 }
 
 func (c *DHTConn) FindNode(target []byte) error {
-	pkt := dht.NewPacket()
+	pkt := NewPacket()
 	pkt.SetT(c.nextTransaction())
 	pkt.SetY("q")
-	pkt.SetKey("q", "find_node")
-	pkt.SetKey("a", map[string]interface{}{
+	pkt.Set("q", "find_node")
+	pkt.Set("a", map[string]interface{}{
 		"id":     c.nodeId,
 		"target": target,
 	})

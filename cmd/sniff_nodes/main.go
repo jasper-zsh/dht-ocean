@@ -1,46 +1,62 @@
 package main
 
 import (
+	"dht-ocean/dht"
 	"dht-ocean/dht/protocol"
 	"fmt"
+	"github.com/sirupsen/logrus"
+	"net"
 )
 
+func AddAddrToChannel(ch chan *net.UDPAddr, addr string) {
+	a, err := net.ResolveUDPAddr("udp", addr)
+	if err != nil {
+		logrus.Errorf("Failed to resolve addr: %s", addr)
+		return
+	}
+	ch <- a
+}
+
 func main() {
+	logrus.SetLevel(logrus.DebugLevel)
+
 	nodes := make(map[string]*protocol.Node)
-	nodesToSniff := make(chan *protocol.Node, 20)
+	addrsToSniff := make(chan *net.UDPAddr, 20)
 
-	nodesToSniff <- &protocol.Node{Addr: "dht.transmissionbt.com", Port: 6881}
-	nodesToSniff <- &protocol.Node{Addr: "router.bittorrent.com", Port: 6881}
-	nodesToSniff <- &protocol.Node{Addr: "router.utorrent.com", Port: 6881}
+	AddAddrToChannel(addrsToSniff, "dht.transmissionbt.com:6881")
+	//addrsToSniff <- &protocol.Node{Addr: "dht.transmissionbt.com", Port: 6881}
+	//addrsToSniff <- &protocol.Node{Addr: "router.bittorrent.com", Port: 6881}
+	//addrsToSniff <- &protocol.Node{Addr: "router.utorrent.com", Port: 6881}
 
-	handleNodes := func(list []*protocol.Node) {
-		fmt.Printf("Found %d nodes total %d.\n", len(list), len(nodes))
-		for _, node := range list {
+	server, err := dht.NewDHT(":6882", protocol.GenerateNodeID())
+	if err != nil {
+		logrus.Errorf("Failed to start dht server. %v", err)
+		panic(err)
+	}
+	server.RegisterFindNodeHandler(func(response *protocol.FindNodeResponse) error {
+		for _, node := range response.Nodes {
 			id := string(node.NodeID)
 			_, ok := nodes[id]
 			if !ok {
 				nodes[id] = node
-				nodesToSniff <- node
+				addr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%d", node.Addr, node.Port))
+				if err != nil {
+					return err
+				}
+				addrsToSniff <- addr
 			}
 		}
-	}
+		logrus.Infof("Found %d nodes Total %d nodes Queued %d nodes.", len(response.Nodes), len(nodes), len(addrsToSniff))
+		return nil
+	})
+
+	server.Run()
 
 	for {
-		node := <-nodesToSniff
-		go func() {
-			err := node.Connect()
-			defer node.Disconnect()
-			if err != nil {
-				fmt.Printf("Warn: Failed to connect to node %x. %s\n", node.NodeID, err.Error())
-				return
-			}
-
-			r, err := node.FindNode(nil)
-			if err != nil {
-				fmt.Printf("Warn: Failed to find_node from %s:%d. %s\n", node.Addr, node.Port, err.Error())
-				return
-			}
-			handleNodes(r.Nodes)
-		}()
+		addr := <-addrsToSniff
+		err := server.FindNode(protocol.GenerateNodeID(), addr)
+		if err != nil {
+			logrus.Errorf("Failed to send find_node query. %v", err)
+		}
 	}
 }

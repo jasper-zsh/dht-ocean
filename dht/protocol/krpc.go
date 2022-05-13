@@ -1,29 +1,29 @@
-package dht
+package protocol
 
 import (
+	"dht-ocean/bencode"
 	"fmt"
-	"github.com/elliotchance/orderedmap"
 )
 
 type Packet struct {
-	data *orderedmap.OrderedMap
+	data map[string]any
 }
 
 func NewPacket() *Packet {
 	return &Packet{
-		data: orderedmap.NewOrderedMap(),
+		data: make(map[string]any),
 	}
 }
 
 func NewPacketFromBuffer(buf []byte) (*Packet, error) {
 	ret := &Packet{}
-	dict, err := BDecode(buf)
+	dict, err := bencode.BDecode(buf)
 	if err != nil {
 		return nil, err
 	}
 	switch dict.(type) {
-	case *orderedmap.OrderedMap:
-		ret.data = dict.(*orderedmap.OrderedMap)
+	case map[string]any:
+		ret.data = dict.(map[string]any)
 		return ret, nil
 	default:
 		return nil, fmt.Errorf("illegal packet: %s", buf)
@@ -31,31 +31,31 @@ func NewPacketFromBuffer(buf []byte) (*Packet, error) {
 }
 
 func (p *Packet) Encode() (string, error) {
-	return BEncode(p.data)
+	return bencode.BEncode(p.data)
 }
 
 func (p *Packet) SetT(tid []byte) {
-	p.data.Set("t", tid)
+	p.data["t"] = tid
 }
 
 func (p *Packet) SetY(y string) {
-	p.data.Set("y", y)
+	p.data["y"] = y
 }
 
 func (p *Packet) SetV(v string) {
-	p.data.Set("v", v)
+	p.data["v"] = v
 }
 
-func (p *Packet) SetKey(key string, value interface{}) {
-	p.data.Set(key, value)
+func (p *Packet) Set(key string, value any) {
+	p.data[key] = value
 }
 
 func (p *Packet) SetError(code int, msg string) {
-	p.data.Set("e", BTList{code, msg})
+	p.data["e"] = []any{code, msg}
 }
 
 func (p *Packet) GetT() []byte {
-	t, ok := p.data.Get("t")
+	t, ok := p.data["t"]
 	if ok {
 		return t.([]byte)
 	} else {
@@ -64,7 +64,7 @@ func (p *Packet) GetT() []byte {
 }
 
 func (p *Packet) GetY() string {
-	t, ok := p.data.Get("y")
+	t, ok := p.data["y"]
 	if ok {
 		return t.(string)
 	} else {
@@ -73,7 +73,7 @@ func (p *Packet) GetY() string {
 }
 
 func (p *Packet) Get(key string) interface{} {
-	t, ok := p.data.Get(key)
+	t, ok := p.data[key]
 	if !ok {
 		return nil
 	}
@@ -84,11 +84,11 @@ func printAny(item interface{}, prefix string) {
 	switch item.(type) {
 	case string:
 		fmt.Printf("%X\n", item)
-	case *orderedmap.OrderedMap:
+	case map[string]any:
 		fmt.Print("{\n")
-		printOrderedMap(item.(*orderedmap.OrderedMap), prefix+"  ")
+		printMap(item.(map[string]any), prefix+"  ")
 		fmt.Printf("%s}\n", prefix)
-	case BTList, []interface{}:
+	case []any:
 		fmt.Print("[\n")
 		for _, e := range item.([]interface{}) {
 			printAny(e, prefix+"  ")
@@ -98,13 +98,13 @@ func printAny(item interface{}, prefix string) {
 	}
 }
 
-func printOrderedMap(m *orderedmap.OrderedMap, prefix string) {
-	for el := m.Front(); el != nil; el = el.Next() {
-		fmt.Printf("%s%s: ", prefix, el.Key)
-		printAny(el.Value, prefix+"  ")
+func printMap(m map[string]any, prefix string) {
+	for k, v := range m {
+		fmt.Printf("%s%s: ", prefix, k)
+		printAny(v, prefix+"  ")
 	}
 }
 
 func (p *Packet) Print() {
-	printOrderedMap(p.data, "")
+	printMap(p.data, "")
 }
