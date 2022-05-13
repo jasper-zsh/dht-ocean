@@ -3,6 +3,7 @@ package protocol
 import (
 	"dht-ocean/dht"
 	"net"
+	"time"
 	"unsafe"
 )
 
@@ -28,23 +29,8 @@ func NewDHTConn(addr string, nodeId []byte) (*DHTConn, error) {
 	if err != nil {
 		return nil, err
 	}
+	conn.SetDeadline(time.Now().Add(time.Second * 10))
 	ret.conn = conn
-	//go func() {
-	//	for {
-	//		fmt.Println("Start to listen dht response...")
-	//		pkt, err := ret.ReadPacket()
-	//		if err != nil {
-	//			fmt.Printf("ERROR: Failed to read packet, stop handling! %s", err.Error())
-	//			break
-	//		}
-	//		pkt.Print()
-	//		q := pkt.Get("q")
-	//		handlers := ret.responseHandlers[q.(string)]
-	//		for _, handler := range handlers {
-	//			handler(pkt)
-	//		}
-	//	}
-	//}()
 
 	return ret, nil
 }

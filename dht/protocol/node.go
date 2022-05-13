@@ -47,6 +47,24 @@ func (n *Node) Disconnect() error {
 	return n.conn.Close()
 }
 
+func (n *Node) FindNode() (*FindNodeResponse, error) {
+	err := n.conn.FindNode(n.NodeID)
+	if err != nil {
+		return nil, err
+	}
+
+	pkt, err := n.conn.ReadPacket()
+	if err != nil {
+		return nil, err
+	}
+
+	r, err := NewFindNodeResponse(pkt)
+	if err != nil {
+		return nil, err
+	}
+	return r, nil
+}
+
 type PingResponse struct {
 	Tid    []byte
 	NodeID []byte
