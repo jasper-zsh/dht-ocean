@@ -41,15 +41,20 @@ func main() {
 		panic(err)
 	}
 	server.RegisterFindNodeHandler(func(response *protocol.FindNodeResponse) error {
+		newNodes := make([]*protocol.Node, 0, len(response.Nodes))
 		for _, node := range response.Nodes {
 			id := string(node.NodeID)
 			_, ok := nodes[id]
 			if !ok {
-				nodes[id] = node
-				NodesToSniff <- node
+				newNodes = append(newNodes, node)
 			}
 		}
-		logrus.Infof("Found %d nodes Total %d nodes Queued %d nodes.", len(response.Nodes), len(nodes), len(NodesToSniff))
+		for _, node := range newNodes {
+			id := string(node.NodeID)
+			nodes[id] = node
+			NodesToSniff <- node
+		}
+		logrus.Infof("Found %d new nodes Total %d nodes Queued %d nodes.", len(newNodes), len(nodes), len(NodesToSniff))
 		return nil
 	})
 
