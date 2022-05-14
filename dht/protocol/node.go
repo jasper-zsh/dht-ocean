@@ -30,7 +30,6 @@ type Node struct {
 	rawPort []byte
 	Addr    *net.UDPAddr
 	NodeID  []byte
-	conn    *DHTConn
 }
 
 func NewNodeFromRaw(raw []byte) (*Node, error) {
@@ -55,41 +54,6 @@ func (n *Node) GetIP() net.IP {
 
 func (n *Node) GetPort() int {
 	return (int)(binary.BigEndian.Uint16(n.rawPort))
-}
-
-func (n *Node) Connect() error {
-	conn, err := NewDHTConn(n.Addr.String(), n.NodeID)
-	if err != nil {
-		return err
-	}
-	n.conn = conn
-	return nil
-}
-
-func (n *Node) Disconnect() error {
-	return n.conn.Close()
-}
-
-func (n *Node) FindNode(target []byte) (*FindNodeResponse, error) {
-	if target == nil {
-		target = GenerateNodeID()
-	}
-	err := n.conn.FindNode(target)
-	if err != nil {
-		return nil, err
-	}
-
-	pkt, err := n.conn.ReadPacket()
-	if err != nil {
-		return nil, err
-	}
-	pkt.Print()
-
-	r, err := NewFindNodeResponse(pkt)
-	if err != nil {
-		return nil, err
-	}
-	return r, nil
 }
 
 type PingRequest struct {

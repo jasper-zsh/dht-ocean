@@ -85,12 +85,14 @@ func (r *AnnouncePeerRequest) InfoHash() []byte {
 	return bencode.MustGetBytes(r.Data, "a.info_hash")
 }
 
-func (r *AnnouncePeerRequest) ImpliedPort() []byte {
-	return bencode.MustGetBytes(r.Data, "a.implied_port")
+func (r *AnnouncePeerRequest) ImpliedPort() int {
+	i, _ := bencode.GetInt(r.Data, "a.implied_port")
+	return i
 }
 
-func (r *AnnouncePeerRequest) Port() []byte {
-	return bencode.MustGetBytes(r.Data, "a.port")
+func (r *AnnouncePeerRequest) Port() int {
+	i, _ := bencode.GetInt(r.Data, "a.port")
+	return i
 }
 
 func (r *AnnouncePeerRequest) Token() []byte {
