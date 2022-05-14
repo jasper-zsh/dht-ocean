@@ -1,16 +1,33 @@
 package bencode
 
 import (
-	"fmt"
 	"strings"
 )
 
-func MustGetString(dict map[string]any, key string) (string, error) {
-	b, ok := dict[key]
-	if !ok {
-		return "", fmt.Errorf("key %s not found", key)
+func GetString(dict map[string]any, key string) (string, bool) {
+	r := GetByPath(dict, key)
+	if r == nil {
+		return "", false
 	}
-	return string(b.([]byte)), nil
+	switch r.(type) {
+	case []byte:
+		return string(r.([]byte)), true
+	default:
+		return "", false
+	}
+}
+
+func GetInt(dict map[string]any, key string) (int, bool) {
+	r := GetByPath(dict, key)
+	if r == nil {
+		return 0, false
+	}
+	switch r.(type) {
+	case int:
+		return r.(int), true
+	default:
+		return 0, false
+	}
 }
 
 func GetByPath(dict map[string]any, path string) any {

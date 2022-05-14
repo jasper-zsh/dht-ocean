@@ -3,8 +3,10 @@ package crawler
 import (
 	"bytes"
 	"dht-ocean/bencode"
+	"dht-ocean/bittorrent"
 	"dht-ocean/dht"
 	"dht-ocean/dht/protocol"
+	"fmt"
 	"github.com/sirupsen/logrus"
 	"net"
 	"time"
@@ -18,6 +20,7 @@ type Crawler struct {
 	nodes          []*protocol.Node
 	ticker         *time.Ticker
 	tm             *dht.TransactionManager
+	packetBuffers  chan *protocol.Packet
 }
 
 func NewCrawler(address string, nodeID []byte) (*Crawler, error) {
@@ -28,9 +31,10 @@ func NewCrawler(address string, nodeID []byte) (*Crawler, error) {
 	}
 
 	c := &Crawler{
-		addr:   addr,
-		nodeID: nodeID,
-		tm:     &dht.TransactionManager{},
+		addr:          addr,
+		nodeID:        nodeID,
+		tm:            &dht.TransactionManager{},
+		packetBuffers: make(chan *protocol.Packet, 1000),
 	}
 	return c, nil
 }
@@ -62,9 +66,10 @@ func (c *Crawler) Run() error {
 
 	c.ticker = time.NewTicker(time.Second)
 	go func() {
-		for {
-			c.listen()
-		}
+		c.listen()
+	}()
+	go func() {
+		c.handleMessage()
 	}()
 	go func() {
 		for {
@@ -90,14 +95,23 @@ func (c *Crawler) listen() {
 			continue
 		}
 		logrus.Tracef("Read %d bytes from udp %s", bytes, addr)
-		msg := make([]byte, len(buf))
+		msg := make([]byte, bytes)
 		copy(msg, buf)
-		pkt, err := protocol.NewPacketFromBuffer(msg)
+		pkt := protocol.NewPacketFromBuffer(msg)
+		pkt.Addr = addr
+		c.packetBuffers <- pkt
+	}
+}
+
+func (c *Crawler) handleMessage() {
+	for {
+		pkt := <-c.packetBuffers
+		err := pkt.Decode()
 		if err != nil {
 			logrus.Warnf("Failed to parse DHT packet. %v", err)
 			continue
 		}
-		c.onMessage(pkt, addr)
+		c.onMessage(pkt, pkt.Addr)
 	}
 }
 
@@ -190,7 +204,8 @@ func (c *Crawler) onFindNodeResponse(nodes []*protocol.Node) {
 		if !node.Addr.IP.IsUnspecified() &&
 			!bytes.Equal(c.nodeID, node.NodeID) &&
 			node.Addr.Port < 65536 &&
-			node.Addr.Port > 0 {
+			node.Addr.Port > 0 &&
+			len(c.nodes) < 2000 {
 			c.nodes = append(c.nodes, node)
 		}
 	}
@@ -216,6 +231,26 @@ func (c *Crawler) onAnnouncePeerRequest(req *protocol.AnnouncePeerRequest, addr 
 	res.SetT(tid)
 	_ = c.sendPacket(res, addr)
 	req.Print()
+
+	go func() {
+		var a string
+		if req.ImpliedPort() == 0 {
+			a = fmt.Sprintf("%s:%d", addr.IP, req.Port())
+		} else {
+			a = addr.String()
+		}
+		bt := bittorrent.NewBitTorrent(req.InfoHash(), a)
+		err := bt.Start()
+		if err != nil {
+			logrus.Debugf("Failed to connect to peer to fetch metadata from %s %v", addr, err)
+			return
+		}
+		defer bt.Stop()
+		err = bt.GetMetadata()
+		if err != nil {
+			logrus.Debugf("Failed to fetch metadata from %s %v", addr, err)
+		}
+	}()
 }
 
 func (c *Crawler) LogStats() {

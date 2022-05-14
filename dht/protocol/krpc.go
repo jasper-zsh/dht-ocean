@@ -7,6 +7,7 @@ import (
 )
 
 type Packet struct {
+	buf  []byte
 	Data map[string]any
 	Addr *net.UDPAddr
 }
@@ -28,18 +29,21 @@ func NewEmptyResponsePacket(nodeID []byte) *Packet {
 	return pkt
 }
 
-func NewPacketFromBuffer(buf []byte) (*Packet, error) {
-	ret := &Packet{}
-	dict, err := bencode.BDecode(buf)
+func NewPacketFromBuffer(buf []byte) *Packet {
+	return &Packet{buf: buf}
+}
+
+func (p *Packet) Decode() error {
+	dict, err := bencode.BDecode(p.buf)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	switch dict.(type) {
 	case map[string]any:
-		ret.Data = dict.(map[string]any)
-		return ret, nil
+		p.Data = dict.(map[string]any)
+		return nil
 	default:
-		return nil, fmt.Errorf("illegal packet: %s", buf)
+		return fmt.Errorf("illegal packet: %s", p.buf)
 	}
 }
 

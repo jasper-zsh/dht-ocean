@@ -10,9 +10,8 @@ func BDecode(buf []byte) (interface{}, error) {
 	return ret, err
 }
 
-func BDecodeDict(buf []byte) (map[string]any, error) {
-	ret, _, err := decodeDict(buf, 0)
-	return ret, err
+func BDecodeDict(buf []byte) (map[string]any, int, error) {
+	return decodeDict(buf, 0)
 }
 
 func decodeAny(buf []byte, pos int) (interface{}, int, error) {
