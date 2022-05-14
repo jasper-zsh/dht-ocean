@@ -1,25 +1,15 @@
 package main
 
 import (
-	"dht-ocean/dht"
+	"dht-ocean/crawler"
 	"dht-ocean/dht/protocol"
 	"github.com/sirupsen/logrus"
 	"os"
+	"time"
 )
-
-func AddNodeToChannel(ch chan *protocol.Node, nodeID []byte, addr string, port int) {
-	ch <- &protocol.Node{
-		NodeID: nodeID,
-		Addr:   addr,
-		Port:   port,
-	}
-}
 
 func main() {
 	logrus.SetLevel(logrus.DebugLevel)
-
-	nodes := make(map[string]*protocol.Node)
-	NodesToSniff := make(chan *protocol.Node, 20)
 
 	nodeID, err := os.ReadFile("node_id")
 	if err != nil {
@@ -30,58 +20,26 @@ func main() {
 			logrus.Errorf("Failed to write nodeID")
 		}
 	}
-	AddNodeToChannel(NodesToSniff, nodeID, "dht.transmissionbt.com", 6881)
-	AddNodeToChannel(NodesToSniff, nodeID, "router.bittorrent.com", 6881)
-	AddNodeToChannel(NodesToSniff, nodeID, "router.utorrent.com", 6881)
 
-	server, err := dht.NewDHT(":6881", nodeID)
-	defer server.Stop()
+	c, err := crawler.NewCrawler(":6881", nodeID)
 	if err != nil {
-		logrus.Errorf("Failed to start dht server. %v", err)
+		logrus.Errorf("Failed to create crawler. %v", err)
 		panic(err)
 	}
-	server.RegisterPingHandler(func(response *protocol.PingResponse) error {
-		node := &protocol.Node{
-			NodeID: response.NodeID(),
-			Addr:   response.Addr.IP.String(),
-			Port:   response.Addr.Port,
-		}
-		id := string(node.NodeID)
-		nodes[id] = node
-		err := server.FindNode(node, protocol.GenerateNodeID())
-		if err != nil {
-			logrus.Errorf("Failed to send find_node query. %v", err)
-		}
-		return nil
+	c.SetBootstrapNodes([]string{
+		"dht.transmissionbt.com:6881",
+		"tracker.moeking.me:6881",
+		"router.bittorrent.com:6881",
+		"router.utorrent.com:6881",
+		"dht.aelitis.com:6881",
 	})
-	server.RegisterFindNodeHandler(func(response *protocol.FindNodeResponse) error {
-		newNodes := make([]*protocol.Node, 0, len(response.Nodes))
-		for _, node := range response.Nodes {
-			id := string(node.NodeID)
-			_, ok := nodes[id]
-			if !ok {
-				newNodes = append(newNodes, node)
-			}
-		}
-		for _, node := range newNodes {
-			if err != nil {
-				logrus.Warnf("Failed to ping node %s:%d", node.Addr, node.Port)
-			}
-			NodesToSniff <- node
-		}
-		logrus.Infof("Found %d new nodes Total %d nodes Queued %d nodes.", len(newNodes), len(nodes), len(NodesToSniff))
-		return nil
-	})
-
-	server.Run()
+	if c.Run() != nil {
+		logrus.Errorf("Failed to run crawler. %v", err)
+	}
+	defer c.Stop()
 
 	for {
-		node := <-NodesToSniff
-		err := server.Ping(node)
-		if err != nil {
-			logrus.Errorf("Failed to ping. %v", err)
-		}
-		//err := server.FindNode(node, protocol.GenerateNodeID())
-
+		time.Sleep(time.Second)
+		c.LogStats()
 	}
 }

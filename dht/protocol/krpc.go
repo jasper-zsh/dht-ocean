@@ -15,7 +15,16 @@ func NewPacket() *Packet {
 	pkt := &Packet{
 		Data: make(map[string]any),
 	}
-	pkt.SetV("AG20")
+	//pkt.SetV("AG20")
+	return pkt
+}
+
+func NewEmptyResponsePacket(nodeID []byte) *Packet {
+	pkt := NewPacket()
+	pkt.SetY("r")
+	pkt.Set("r", map[string]any{
+		"id": nodeID,
+	})
 	return pkt
 }
 
@@ -76,6 +85,15 @@ func (p *Packet) GetY() string {
 	}
 }
 
+func (p *Packet) GetQ() string {
+	q, ok := p.Data["q"]
+	if ok {
+		return string(q.([]byte))
+	} else {
+		return ""
+	}
+}
+
 func (p *Packet) Get(key string) interface{} {
 	t, ok := p.Data[key]
 	if !ok {
@@ -97,8 +115,10 @@ func printAny(item interface{}, prefix string) {
 		for _, e := range item.([]interface{}) {
 			printAny(e, prefix+"  ")
 		}
+	case int:
+		fmt.Printf("%d\n", item)
 	default:
-		fmt.Printf("%X\n", item)
+		fmt.Printf("%s\n", item)
 	}
 }
 

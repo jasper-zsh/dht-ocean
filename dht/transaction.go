@@ -1,6 +1,9 @@
 package dht
 
-import "time"
+import (
+	"encoding/binary"
+	"time"
+)
 
 type TransactionContext struct {
 	Tid       []byte
@@ -18,4 +21,15 @@ func (s TransactionStorage) Add(ctx *TransactionContext) {
 func (s TransactionStorage) Get(tid []byte) *TransactionContext {
 	sTid := string(tid)
 	return s[sTid]
+}
+
+type TransactionManager struct {
+	nextTransactionID uint32
+}
+
+func (tm *TransactionManager) NextTransactionID() []byte {
+	tid := make([]byte, 4)
+	binary.BigEndian.PutUint32(tid, tm.nextTransactionID)
+	tm.nextTransactionID += 1
+	return tid
 }

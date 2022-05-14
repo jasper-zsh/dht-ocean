@@ -1,4 +1,4 @@
-package dht
+package bencode
 
 import (
 	"github.com/elliotchance/orderedmap"

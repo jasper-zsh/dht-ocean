@@ -1,1 +1,98 @@
 package protocol
+
+import "dht-ocean/bencode"
+
+type GetPeersRequest struct {
+	*Packet
+}
+
+func NewGetPeersRequestFromPacket(pkt *Packet) *GetPeersRequest {
+	req := &GetPeersRequest{pkt}
+	return req
+}
+
+func (r *GetPeersRequest) NodeID() []byte {
+	a := r.Get("a")
+	if a == nil {
+		return nil
+	}
+	return bencode.MustGetBytes(a.(map[string]any), "id")
+}
+
+func (r *GetPeersRequest) rawInfoHash() []byte {
+	a := r.Get("a")
+	if a == nil {
+		return nil
+	}
+	return bencode.MustGetBytes(a.(map[string]any), "info_hash")
+}
+
+func (r *GetPeersRequest) InfoHash() []byte {
+	raw := r.rawInfoHash()
+	if raw == nil {
+		return nil
+	}
+	if len(raw) < 20 {
+		return nil
+	}
+	return raw[20:]
+}
+
+func (r *GetPeersRequest) Token() []byte {
+	raw := r.rawInfoHash()
+	if raw == nil {
+		return nil
+	}
+	if len(raw) < 20 {
+		return nil
+	}
+	return raw[:20]
+}
+
+type GetPeersResponse struct {
+	*Packet
+}
+
+func NewGetPeersResponse(nodeID, token []byte) *GetPeersResponse {
+	pkt := NewPacket()
+	pkt.SetY("r")
+	pkt.Set("r", map[string]any{
+		"id":    nodeID,
+		"nodes": "",
+		"token": token,
+	})
+	r := &GetPeersResponse{pkt}
+	return r
+}
+
+type AnnouncePeerRequest struct {
+	*Packet
+}
+
+func NewAnnouncePeerRequestFromPacket(pkt *Packet) *AnnouncePeerRequest {
+	return &AnnouncePeerRequest{pkt}
+}
+
+func (r *AnnouncePeerRequest) NodeID() []byte {
+	a := r.Get("a")
+	if a == nil {
+		return nil
+	}
+	return bencode.MustGetBytes(a.(map[string]any), "id")
+}
+
+func (r *AnnouncePeerRequest) InfoHash() []byte {
+	return bencode.MustGetBytes(r.Data, "a.info_hash")
+}
+
+func (r *AnnouncePeerRequest) ImpliedPort() []byte {
+	return bencode.MustGetBytes(r.Data, "a.implied_port")
+}
+
+func (r *AnnouncePeerRequest) Port() []byte {
+	return bencode.MustGetBytes(r.Data, "a.port")
+}
+
+func (r *AnnouncePeerRequest) Token() []byte {
+	return bencode.MustGetBytes(r.Data, "a.token")
+}

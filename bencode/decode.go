@@ -10,7 +10,15 @@ func BDecode(buf []byte) (interface{}, error) {
 	return ret, err
 }
 
+func BDecodeDict(buf []byte) (map[string]any, error) {
+	ret, _, err := decodeDict(buf, 0)
+	return ret, err
+}
+
 func decodeAny(buf []byte, pos int) (interface{}, int, error) {
+	if pos >= len(buf) {
+		return nil, 0, fmt.Errorf("illegal payload")
+	}
 	switch buf[pos] {
 	case 'i':
 		return decodeInt(buf, pos)
@@ -19,7 +27,7 @@ func decodeAny(buf []byte, pos int) (interface{}, int, error) {
 	case 'l':
 		return decodeList(buf, pos)
 	case 'd':
-		return decodeMap(buf, pos)
+		return decodeDict(buf, pos)
 	default:
 		return nil, 0, fmt.Errorf("unsupported type: %c", buf[pos])
 	}
@@ -39,7 +47,7 @@ func decodeList(buf []byte, pos int) ([]any, int, error) {
 	return ret, i + 1, nil
 }
 
-func decodeMap(buf []byte, pos int) (map[string]any, int, error) {
+func decodeDict(buf []byte, pos int) (map[string]any, int, error) {
 	ret := make(map[string]any)
 	i := pos + 1
 	isKey := true
@@ -73,6 +81,9 @@ func decodeBytes(buf []byte, pos int) ([]byte, int, error) {
 	l, err := strconv.Atoi((string)(buf[pos:i]))
 	if err != nil {
 		return nil, 0, err
+	}
+	if l >= len(buf) {
+		return nil, 0, fmt.Errorf("illegal str len")
 	}
 	return buf[i+1 : i+l+1], i + l + 1, nil
 }

@@ -21,11 +21,14 @@ func GenerateNodeID() []byte {
 	return hash.Sum(nil)
 }
 
+func GetNeighbourID(target, nodeID []byte) []byte {
+	return append(target[:10], nodeID[10:]...)
+}
+
 type Node struct {
 	rawIP   []byte
 	rawPort []byte
-	Addr    string
-	Port    int
+	Addr    *net.UDPAddr
 	NodeID  []byte
 	conn    *DHTConn
 }
@@ -35,29 +38,27 @@ func NewNodeFromRaw(raw []byte) (*Node, error) {
 	node.NodeID = raw[:20]
 	node.rawIP = raw[20:24]
 	node.rawPort = raw[24:26]
-	node.Addr = node.GetIP()
-	node.Port = node.GetPort()
+	node.Addr = &net.UDPAddr{
+		IP:   node.GetIP(),
+		Port: node.GetPort(),
+	}
 	return node, nil
 }
 
-func (n *Node) GetIP() string {
-	return fmt.Sprintf("%d.%d.%d.%d", n.rawIP[0], n.rawIP[1], n.rawIP[2], n.rawIP[3])
+func (n *Node) NodeIDString() string {
+	return string(n.NodeID)
+}
+
+func (n *Node) GetIP() net.IP {
+	return net.IPv4(n.rawIP[0], n.rawIP[1], n.rawIP[2], n.rawIP[3])
 }
 
 func (n *Node) GetPort() int {
 	return (int)(binary.BigEndian.Uint16(n.rawPort))
 }
 
-func (n *Node) GetUDPAddr() (*net.UDPAddr, error) {
-	addr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%d", n.Addr, n.Port))
-	if err != nil {
-		return nil, err
-	}
-	return addr, nil
-}
-
 func (n *Node) Connect() error {
-	conn, err := NewDHTConn(fmt.Sprintf("%s:%d", n.Addr, n.Port), n.NodeID)
+	conn, err := NewDHTConn(n.Addr.String(), n.NodeID)
 	if err != nil {
 		return err
 	}
@@ -161,8 +162,8 @@ func NewFindNodeResponse(pkt *Packet) (*FindNodeResponse, error) {
 	case map[string]any:
 		r.TargetNodeID = rMap.(map[string]any)["id"].([]byte)
 		rawNodes := rMap.(map[string]any)["nodes"].([]byte)
-		for i := 0; i*rawNodeLength < len(rawNodes); i++ {
-			node, err := NewNodeFromRaw(rawNodes[i : i+rawNodeLength])
+		for i := 0; (i+1)*(rawNodeLength) < len(rawNodes); i++ {
+			node, err := NewNodeFromRaw(rawNodes[i*rawNodeLength : (i+1)*rawNodeLength])
 			if err != nil {
 				return nil, err
 			}
