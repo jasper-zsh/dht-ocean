@@ -1,6 +1,7 @@
 package crawler
 
 import (
+	"bytes"
 	"dht-ocean/bencode"
 	"dht-ocean/dht"
 	"dht-ocean/dht/protocol"
@@ -185,7 +186,14 @@ func (c *Crawler) onMessage(packet *protocol.Packet, addr *net.UDPAddr) {
 }
 
 func (c *Crawler) onFindNodeResponse(nodes []*protocol.Node) {
-	c.nodes = append(c.nodes, nodes...)
+	for _, node := range nodes {
+		if !node.Addr.IP.IsUnspecified() &&
+			!bytes.Equal(c.nodeID, node.NodeID) &&
+			node.Addr.Port < 65536 &&
+			node.Addr.Port > 0 {
+			c.nodes = append(c.nodes, node)
+		}
+	}
 }
 
 func (c *Crawler) onGetPeersRequest(req *protocol.GetPeersRequest, addr *net.UDPAddr) {
