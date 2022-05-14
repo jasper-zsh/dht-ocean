@@ -120,8 +120,7 @@ func (c *Crawler) makeNeighbours() {
 	cnt := 0
 	c.nodes = append(c.nodes, c.bootstrapNodes...)
 	for _, node := range c.nodes {
-		c.sendPing(node.Addr)
-		c.sendFindNode(node.NodeID, protocol.GenerateNodeID(), node.Addr)
+		c.sendFindNode(c.nodeID, protocol.GenerateNodeID(), node.Addr)
 		cnt += 1
 	}
 	logrus.Infof("Sending %d find_node queries.", cnt)
