@@ -170,6 +170,11 @@ func (c *Crawler) onMessage(packet *protocol.Packet, addr *net.UDPAddr) {
 			//		packet.Print()
 			//	}
 		}
+	case "e":
+		errs := packet.Get("e")
+		if errs != nil {
+			logrus.Debugf("DHT error response: %s", errs)
+		}
 	default:
 		logrus.Debugf("Drop illegal packet with no type")
 		if logrus.GetLevel() >= logrus.DebugLevel {
