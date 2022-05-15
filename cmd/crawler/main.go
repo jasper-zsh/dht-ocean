@@ -7,6 +7,7 @@ import (
 	"dht-ocean/dht"
 	"dht-ocean/model"
 	"dht-ocean/storage"
+	"encoding/hex"
 	"github.com/kamva/mgm/v3"
 	"github.com/sirupsen/logrus"
 	"os"
@@ -45,7 +46,7 @@ func main() {
 	c.SetBootstrapNodes(cfg.BootstrapNodes)
 	c.SetInfoHashFilter(func(infoHash []byte) bool {
 		t := &model.Torrent{}
-		err := col.FindByID(string(infoHash), t)
+		err := col.FindByID(hex.EncodeToString(infoHash), t)
 		if err != nil {
 			return true
 		}
