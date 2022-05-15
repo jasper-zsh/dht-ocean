@@ -2,7 +2,7 @@ package main
 
 import (
 	"dht-ocean/crawler"
-	"dht-ocean/dht/protocol"
+	"dht-ocean/dht"
 	"github.com/sirupsen/logrus"
 	"os"
 	"time"
@@ -14,7 +14,7 @@ func main() {
 	nodeID, err := os.ReadFile("node_id")
 	if err != nil {
 		logrus.Warnf("Cannot read nodeID, generated randomly.")
-		nodeID = protocol.GenerateNodeID()
+		nodeID = dht.GenerateNodeID()
 		err = os.WriteFile("node_id", nodeID, 0666)
 		if err != nil {
 			logrus.Errorf("Failed to write nodeID")

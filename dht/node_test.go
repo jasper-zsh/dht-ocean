@@ -1,7 +1,6 @@
-package protocol
+package dht
 
 import (
-	"dht-ocean/dht"
 	"fmt"
 	"github.com/elliotchance/orderedmap"
 	"github.com/stretchr/testify/assert"
@@ -9,7 +8,7 @@ import (
 )
 
 func TestDHTConn_FindNode(t *testing.T) {
-	nodeId := dht.GenerateNodeID()
+	nodeId := GenerateNodeID()
 	conn, err := NewDHTConn("dht.transmissionbt.com:6881", nodeId)
 	if !assert.NoError(t, err) {
 		return

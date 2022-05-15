@@ -5,22 +5,25 @@ import (
 	"dht-ocean/bencode"
 	"dht-ocean/bittorrent"
 	"dht-ocean/dht"
-	"dht-ocean/dht/protocol"
 	"fmt"
 	"github.com/sirupsen/logrus"
 	"net"
 	"time"
 )
 
+type InfoHashFilter func(infoHash []byte) bool
+
 type Crawler struct {
-	addr           *net.UDPAddr
-	conn           *net.UDPConn
-	nodeID         []byte
-	bootstrapNodes []*protocol.Node
-	nodes          []*protocol.Node
-	ticker         *time.Ticker
-	tm             *dht.TransactionManager
-	packetBuffers  chan *protocol.Packet
+	addr            *net.UDPAddr
+	conn            *net.UDPConn
+	nodeID          []byte
+	bootstrapNodes  []*dht.Node
+	nodes           []*dht.Node
+	ticker          *time.Ticker
+	tm              *dht.TransactionManager
+	packetBuffers   chan *dht.Packet
+	torrentHandlers []bittorrent.TorrentHandler
+	infoHashFilter  InfoHashFilter
 }
 
 func NewCrawler(address string, nodeID []byte) (*Crawler, error) {
@@ -34,26 +37,34 @@ func NewCrawler(address string, nodeID []byte) (*Crawler, error) {
 		addr:          addr,
 		nodeID:        nodeID,
 		tm:            &dht.TransactionManager{},
-		packetBuffers: make(chan *protocol.Packet, 1000),
+		packetBuffers: make(chan *dht.Packet, 1000),
 	}
 	return c, nil
 }
 
 func (c *Crawler) SetBootstrapNodes(addrs []string) {
-	nodes := make([]*protocol.Node, 0, len(addrs))
+	nodes := make([]*dht.Node, 0, len(addrs))
 	for _, strAddr := range addrs {
 		addr, err := net.ResolveUDPAddr("udp", strAddr)
 		if err != nil {
 			logrus.Warnf("Illegal bootstrap node address %s.", strAddr)
 			continue
 		}
-		node := &protocol.Node{
+		node := &dht.Node{
 			NodeID: c.nodeID,
 			Addr:   addr,
 		}
 		nodes = append(nodes, node)
 	}
 	c.bootstrapNodes = nodes
+}
+
+func (bt *Crawler) AddTorrentHandler(handler bittorrent.TorrentHandler) {
+	bt.torrentHandlers = append(bt.torrentHandlers, handler)
+}
+
+func (c *Crawler) SetInfoHashFilter(filter InfoHashFilter) {
+	c.infoHashFilter = filter
 }
 
 func (c *Crawler) Run() error {
@@ -83,8 +94,12 @@ func (c *Crawler) Run() error {
 }
 
 func (c *Crawler) Stop() {
-	_ = c.conn.Close()
-	c.ticker.Stop()
+	if c.conn != nil {
+		_ = c.conn.Close()
+	}
+	if c.ticker != nil {
+		c.ticker.Stop()
+	}
 }
 
 func (c *Crawler) listen() {
@@ -97,7 +112,7 @@ func (c *Crawler) listen() {
 		logrus.Tracef("Read %d bytes from udp %s", bytes, addr)
 		msg := make([]byte, bytes)
 		copy(msg, buf)
-		pkt := protocol.NewPacketFromBuffer(msg)
+		pkt := dht.NewPacketFromBuffer(msg)
 		pkt.Addr = addr
 		c.packetBuffers <- pkt
 	}
@@ -115,7 +130,7 @@ func (c *Crawler) handleMessage() {
 	}
 }
 
-func (c *Crawler) sendPacket(pkt *protocol.Packet, addr *net.UDPAddr) error {
+func (c *Crawler) sendPacket(pkt *dht.Packet, addr *net.UDPAddr) error {
 	encoded, err := pkt.Encode()
 	if err != nil {
 		logrus.Errorf("Failed to encode packet. %v", err)
@@ -135,7 +150,7 @@ func (c *Crawler) makeNeighbours() {
 	cnt := 0
 	c.nodes = append(c.nodes, c.bootstrapNodes...)
 	for _, node := range c.nodes {
-		c.sendFindNode(c.nodeID, protocol.GenerateNodeID(), node.Addr)
+		c.sendFindNode(c.nodeID, dht.GenerateNodeID(), node.Addr)
 		cnt += 1
 	}
 	logrus.Infof("Sending %d find_node queries.", cnt)
@@ -143,13 +158,14 @@ func (c *Crawler) makeNeighbours() {
 }
 
 func (c *Crawler) sendFindNode(nodeID []byte, target []byte, addr *net.UDPAddr) {
-	req := protocol.NewFindNodeRequest(nodeID, target)
+	//req := dht.NewFindNodeRequest(dht.GetNeighbourID(nodeID, c.nodeID), target)
+	req := dht.NewFindNodeRequest(c.nodeID, target)
 	req.SetT(c.tm.NextTransactionID())
 	_ = c.sendPacket(req.Packet, addr)
 }
 
 func (c *Crawler) sendPing(addr *net.UDPAddr) {
-	req := protocol.NewPingRequest(c.nodeID)
+	req := dht.NewPingRequest(c.nodeID)
 	req.SetT(c.tm.NextTransactionID())
 	_ = c.sendPacket(req.Packet, addr)
 }
@@ -158,11 +174,11 @@ func (c *Crawler) loop() {
 	c.makeNeighbours()
 }
 
-func (c *Crawler) onMessage(packet *protocol.Packet, addr *net.UDPAddr) {
+func (c *Crawler) onMessage(packet *dht.Packet, addr *net.UDPAddr) {
 	switch packet.GetY() {
 	case "r":
 		if bencode.CheckMapPath(packet.Data, "r.nodes") {
-			res, err := protocol.NewFindNodeResponse(packet)
+			res, err := dht.NewFindNodeResponse(packet)
 			if err != nil {
 				logrus.Debugf("Failed to parse find_node response")
 				if logrus.GetLevel() >= logrus.DebugLevel {
@@ -174,10 +190,10 @@ func (c *Crawler) onMessage(packet *protocol.Packet, addr *net.UDPAddr) {
 	case "q":
 		switch packet.GetQ() {
 		case "get_peers":
-			req := protocol.NewGetPeersRequestFromPacket(packet)
+			req := dht.NewGetPeersRequestFromPacket(packet)
 			c.onGetPeersRequest(req, addr)
 		case "announce_peer":
-			req := protocol.NewAnnouncePeerRequestFromPacket(packet)
+			req := dht.NewAnnouncePeerRequestFromPacket(packet)
 			c.onAnnouncePeerRequest(req, addr)
 			//default:
 			//	logrus.Debugf("Drop illegal query with no query_type")
@@ -199,7 +215,7 @@ func (c *Crawler) onMessage(packet *protocol.Packet, addr *net.UDPAddr) {
 	}
 }
 
-func (c *Crawler) onFindNodeResponse(nodes []*protocol.Node) {
+func (c *Crawler) onFindNodeResponse(nodes []*dht.Node) {
 	for _, node := range nodes {
 		if !node.Addr.IP.IsUnspecified() &&
 			!bytes.Equal(c.nodeID, node.NodeID) &&
@@ -211,7 +227,7 @@ func (c *Crawler) onFindNodeResponse(nodes []*protocol.Node) {
 	}
 }
 
-func (c *Crawler) onGetPeersRequest(req *protocol.GetPeersRequest, addr *net.UDPAddr) {
+func (c *Crawler) onGetPeersRequest(req *dht.GetPeersRequest, addr *net.UDPAddr) {
 	tid := req.GetT()
 	if tid == nil {
 		logrus.Debugf("Drop request with no tid.")
@@ -220,19 +236,22 @@ func (c *Crawler) onGetPeersRequest(req *protocol.GetPeersRequest, addr *net.UDP
 		}
 		return
 	}
-	res := protocol.NewGetPeersResponse(protocol.GetNeighbourID(req.InfoHash(), req.NodeID()), req.Token())
+	res := dht.NewGetPeersResponse(dht.GetNeighbourID(req.InfoHash(), req.NodeID()), req.Token())
 	res.SetT(tid)
 	_ = c.sendPacket(res.Packet, addr)
 }
 
-func (c *Crawler) onAnnouncePeerRequest(req *protocol.AnnouncePeerRequest, addr *net.UDPAddr) {
+func (c *Crawler) onAnnouncePeerRequest(req *dht.AnnouncePeerRequest, addr *net.UDPAddr) {
 	tid := req.GetT()
-	res := protocol.NewEmptyResponsePacket(protocol.GetNeighbourID(req.NodeID(), c.nodeID))
+	res := dht.NewEmptyResponsePacket(dht.GetNeighbourID(req.NodeID(), c.nodeID))
 	res.SetT(tid)
 	_ = c.sendPacket(res, addr)
-	req.Print()
+	logrus.Debugf("Got announce peer %x %s", req.InfoHash(), req.Name())
 
 	go func() {
+		if c.infoHashFilter != nil && !c.infoHashFilter(req.InfoHash()) {
+			return
+		}
 		var a string
 		if req.ImpliedPort() == 0 {
 			a = fmt.Sprintf("%s:%d", addr.IP, req.Port())
@@ -246,9 +265,16 @@ func (c *Crawler) onAnnouncePeerRequest(req *protocol.AnnouncePeerRequest, addr 
 			return
 		}
 		defer bt.Stop()
-		err = bt.GetMetadata()
+		torrent, err := bt.GetTorrent()
 		if err != nil {
-			logrus.Debugf("Failed to fetch metadata from %s %v", addr, err)
+			logrus.Debugf("Failed to fetch metadata from %s %+v", addr, err)
+			return
+		}
+		logrus.Debugf("Got torrent %s with %d files", torrent.Name(), len(torrent.Files()))
+		if torrent.HasFiles() {
+			for _, handler := range c.torrentHandlers {
+				go handler.HandleTorrent(torrent)
+			}
 		}
 	}()
 }

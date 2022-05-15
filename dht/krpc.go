@@ -1,4 +1,4 @@
-package protocol
+package dht
 
 import (
 	"dht-ocean/bencode"

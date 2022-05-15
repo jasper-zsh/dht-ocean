@@ -30,6 +30,19 @@ func GetInt(dict map[string]any, key string) (int, bool) {
 	}
 }
 
+func GetList(dict map[string]any, key string) ([]any, bool) {
+	r := GetByPath(dict, key)
+	if r == nil {
+		return nil, false
+	}
+	switch r.(type) {
+	case []any:
+		return r.([]any), true
+	default:
+		return nil, false
+	}
+}
+
 func GetByPath(dict map[string]any, path string) any {
 	parts := strings.Split(path, ".")
 	var m any = dict

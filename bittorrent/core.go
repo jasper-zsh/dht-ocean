@@ -2,11 +2,14 @@ package bittorrent
 
 import (
 	"bytes"
+	"crypto/sha1"
 	"dht-ocean/bencode"
-	"dht-ocean/dht/protocol"
+	"dht-ocean/dht"
 	"encoding/binary"
 	"fmt"
+	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
+	"io"
 	"math"
 	"net"
 )
@@ -48,7 +51,7 @@ func NewBitTorrent(infoHash []byte, addr string) *BitTorrent {
 func (bt *BitTorrent) Start() error {
 	conn, err := net.Dial("tcp", bt.addr)
 	if err != nil {
-		return err
+		return errors.WithStack(err)
 	}
 	bt.conn = conn
 	return nil
@@ -57,49 +60,76 @@ func (bt *BitTorrent) Start() error {
 func (bt *BitTorrent) Stop() error {
 	err := bt.conn.Close()
 	if err != nil {
+		return errors.WithStack(err)
+	}
+	return nil
+}
+
+func (bt *BitTorrent) sendMessage(msg []byte) error {
+	lenB := make([]byte, 4)
+	binary.BigEndian.PutUint32(lenB, uint32(len(msg)))
+	_, err := bt.conn.Write(lenB)
+	if err != nil {
+		return err
+	}
+	_, err = bt.conn.Write(msg)
+	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func (bt *BitTorrent) GetMetadata() error {
+func (bt *BitTorrent) GetTorrent() (*Torrent, error) {
 	err := bt.handshake()
 	if err != nil {
-		return err
+		return nil, errors.WithStack(err)
 	}
 	ext, err := bt.extHandshake()
 	if err != nil {
-		return err
+		return nil, errors.WithStack(err)
 	}
 	pieces, err := bt.requestPieces(ext)
 	if err != nil {
-		return err
+		return nil, errors.WithStack(err)
 	}
-	logrus.Infof("got pieces: %s", pieces)
-	return nil
+	rawMetadata := make([]byte, ext.MetadataSize)
+	for _, piece := range pieces {
+		copy(rawMetadata[piece.ID*pieceLength:], piece.Data)
+	}
+	h := sha1.New()
+	h.Write(rawMetadata)
+	hash := h.Sum(nil)
+	if !bytes.Equal(bt.infoHash, hash) {
+		return nil, fmt.Errorf("corrupt torrent")
+	}
+	metadata, _, err := bencode.BDecodeDict(rawMetadata)
+	if err != nil {
+		return nil, err
+	}
+	return NewTorrentFromMetadata(bt.infoHash, metadata), nil
 }
 
 func (bt *BitTorrent) handshake() error {
 	pkt := append([]byte{(byte)(len(btProtocol))}, btProtocol...)
 	pkt = append(pkt, btReserved...)
 	pkt = append(pkt, bt.infoHash...)
-	pkt = append(pkt, protocol.GenerateNodeID()...)
+	pkt = append(pkt, dht.GenerateNodeID()...)
 	_, err := bt.conn.Write(pkt)
 	if err != nil {
-		return err
+		return errors.WithStack(err)
 	}
 	pLength := make([]byte, 1)
-	b, err := bt.conn.Read(pLength)
+	b, err := io.ReadFull(bt.conn, pLength)
 	if err != nil {
-		return err
+		return errors.WithStack(err)
 	}
 	if b == 0 {
 		return fmt.Errorf("read empty protocol length")
 	}
 	data := make([]byte, pLength[0]+48)
-	_, err = bt.conn.Read(data)
+	_, err = io.ReadFull(bt.conn, data)
 	if err != nil {
-		return err
+		return errors.WithStack(err)
 	}
 	if !bytes.Equal(data[:pLength[0]], btProtocol) {
 		return fmt.Errorf("not bt protocol")
@@ -119,20 +149,24 @@ func (bt *BitTorrent) extHandshake() (*ExtHandshakeResult, error) {
 		},
 	})
 	if err != nil {
-		return nil, err
+		return nil, errors.WithStack(err)
 	}
 	msg := append([]byte{btMsgID, extHandshakeID}, []byte(p)...)
-	_, err = bt.conn.Write(msg)
+	err = bt.sendMessage(msg)
 	if err != nil {
-		return nil, err
+		return nil, errors.WithStack(err)
 	}
 	msg, err = bt.readExtMessage()
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
 	if msg[0] != 0 {
 		return nil, fmt.Errorf("protocol error: should be ext handshake not %d", msg[0])
 	}
-	ext, _, err := bencode.BDecodeDict([]byte(p))
+	ext, _, err := bencode.BDecodeDict(msg[1:])
 	if err != nil {
-		return nil, err
+		logrus.Debugf("failed to decode ext metadata")
+		return nil, errors.WithStack(err)
 	}
 	metadataSize, ok1 := bencode.GetInt(ext, "metadata_size")
 	utMetadata, ok2 := bencode.GetInt(ext, "m.ut_metadata")
@@ -151,11 +185,13 @@ func (bt *BitTorrent) requestPieces(ext *ExtHandshakeResult) ([]*Piece, error) {
 	for i := 0; i < ext.NumPieces; i++ {
 		err := bt.requestPiece(ext, i)
 		if err != nil {
-			return nil, err
+			return nil, errors.WithStack(err)
 		}
+	}
+	for i := 0; i < ext.NumPieces; i++ {
 		piece, err := bt.readPiece()
 		if err != nil {
-			return nil, err
+			return nil, errors.WithStack(err)
 		}
 		pieces = append(pieces, piece)
 	}
@@ -168,12 +204,12 @@ func (bt *BitTorrent) requestPiece(ext *ExtHandshakeResult, piece int) error {
 		"piece":    piece,
 	})
 	if err != nil {
-		return err
+		return errors.WithStack(err)
 	}
 	msg := append([]byte{btMsgID, byte(ext.UtMetadata)}, p...)
-	_, err = bt.conn.Write(msg)
+	err = bt.sendMessage(msg)
 	if err != nil {
-		return err
+		return errors.WithStack(err)
 	}
 	return nil
 }
@@ -181,16 +217,17 @@ func (bt *BitTorrent) requestPiece(ext *ExtHandshakeResult, piece int) error {
 func (bt *BitTorrent) readPiece() (*Piece, error) {
 	msg, err := bt.readExtMessage()
 	if err != nil {
-		return nil, err
+		return nil, errors.WithStack(err)
 	}
 	if msg[0] == 0 {
 		return nil, fmt.Errorf("protocol error: should not be ext handshake")
 	}
 	dict, pos, err := bencode.BDecodeDict(msg[1:])
 	if err != nil {
-		return nil, err
+		logrus.Debugf("failed to decode piece")
+		return nil, errors.WithStack(err)
 	}
-	trailer := msg[pos:]
+	trailer := msg[pos+1:]
 	msgType, _ := bencode.GetInt(dict, "msg_type")
 	if msgType != 1 {
 		return nil, fmt.Errorf("protocol error: wrong msg_type")
@@ -207,18 +244,16 @@ func (bt *BitTorrent) readPiece() (*Piece, error) {
 
 func (bt *BitTorrent) readMessage() ([]byte, error) {
 	msgLengthB := make([]byte, 4)
-	_, err := bt.conn.Read(msgLengthB)
+	var msgLength uint32
+	_, err := io.ReadFull(bt.conn, msgLengthB)
 	if err != nil {
-		return nil, err
+		return nil, errors.WithStack(err)
 	}
-	msgLength := binary.BigEndian.Uint32(msgLengthB)
-	if msgLength == 0 {
-		return nil, nil
-	}
+	msgLength = binary.BigEndian.Uint32(msgLengthB)
 	msg := make([]byte, msgLength)
-	_, err = bt.conn.Read(msg)
+	_, err = io.ReadFull(bt.conn, msg)
 	if err != nil {
-		return nil, err
+		return nil, errors.WithStack(err)
 	}
 	return msg, nil
 }
@@ -227,7 +262,7 @@ func (bt *BitTorrent) readExtMessage() ([]byte, error) {
 	for {
 		msg, err := bt.readMessage()
 		if err != nil {
-			return nil, err
+			return nil, errors.WithStack(err)
 		}
 		if msg[0] == btMsgID {
 			return msg[1:], nil

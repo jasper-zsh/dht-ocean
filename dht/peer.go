@@ -1,4 +1,4 @@
-package protocol
+package dht
 
 import "dht-ocean/bencode"
 
@@ -97,4 +97,9 @@ func (r *AnnouncePeerRequest) Port() int {
 
 func (r *AnnouncePeerRequest) Token() []byte {
 	return bencode.MustGetBytes(r.Data, "a.token")
+}
+
+func (r *AnnouncePeerRequest) Name() string {
+	s, _ := bencode.GetString(r.Data, "a.name")
+	return s
 }
