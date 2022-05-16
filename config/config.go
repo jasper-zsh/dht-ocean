@@ -10,6 +10,7 @@ type Config struct {
 	Listen         string   `yaml:"listen"`
 	Mongo          string   `yaml:"mongo"`
 	Tracker        string   `yaml:"tracker"`
+	TrackerLimit   int      `yaml:"tracker_limit"`
 	ES             string   `yaml:"es"`
 	MaxQueueSize   int      `yaml:"max_queue_size"`
 }

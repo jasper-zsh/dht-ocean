@@ -38,12 +38,14 @@ type BitTorrent struct {
 	addr     string
 	conn     net.Conn
 	infoHash []byte
+	nodeID   []byte
 }
 
-func NewBitTorrent(infoHash []byte, addr string) *BitTorrent {
+func NewBitTorrent(nodeID, infoHash []byte, addr string) *BitTorrent {
 	r := &BitTorrent{
 		addr:     addr,
 		infoHash: infoHash,
+		nodeID:   nodeID,
 	}
 	return r
 }
@@ -110,10 +112,15 @@ func (bt *BitTorrent) GetTorrent() (*Torrent, error) {
 }
 
 func (bt *BitTorrent) handshake() error {
-	pkt := append([]byte{(byte)(len(btProtocol))}, btProtocol...)
+	pkt := make([]byte, 1)
+	pkt[0] = byte(len(btProtocol))
+	pkt = append(pkt, btProtocol...)
 	pkt = append(pkt, btReserved...)
 	pkt = append(pkt, bt.infoHash...)
+	// AlphaReign
 	pkt = append(pkt, dht.GenerateNodeID()...)
+	// Official
+	//pkt = append(pkt, bt.nodeID...)
 	_, err := bt.conn.Write(pkt)
 	if err != nil {
 		return errors.WithStack(err)

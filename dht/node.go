@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"math/rand"
 	"net"
-	"strconv"
 )
 
 const (
@@ -14,10 +13,10 @@ const (
 )
 
 func GenerateNodeID() []byte {
+	r := make([]byte, 20)
+	_, _ = rand.Read(r)
 	hash := sha1.New()
-	for i := 0; i < 32; i++ {
-		hash.Write([]byte(strconv.Itoa(rand.Int())))
-	}
+	hash.Write(r)
 	return hash.Sum(nil)
 }
 

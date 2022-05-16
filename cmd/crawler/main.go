@@ -11,15 +11,14 @@ import (
 	"dht-ocean/storage"
 	"encoding/hex"
 	"github.com/kamva/mgm/v3"
-	"github.com/kamva/mgm/v3/operator"
 	"github.com/sirupsen/logrus"
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/mongo/options"
 	"os"
 	"time"
 )
 
 func main() {
+	//logrus.SetLevel(logrus.DebugLevel)
+
 	cfg, err := config.ReadConfigFromFile("config.yaml")
 	if err != nil {
 		logrus.Errorf("Failed to read config file. %v", err)
@@ -62,18 +61,7 @@ func main() {
 		trackerLimit: 25,
 	}
 	c.AddTorrentHandler(handler)
-	tr, err := tracker.NewUDPTracker(cfg.Tracker)
-	if err != nil {
-		logrus.Errorf("Failed to create tracker. %v", err)
-		return
-	}
-	err = tr.Start()
-	if err != nil {
-		logrus.Errorf("Failed to start tracker client. %v", err)
-		return
-	}
-	defer tr.Stop()
-	handler.SetTracker(tr)
+
 	es, err := storage.NewESTorrentStorage(cfg.ES)
 	if err != nil {
 		logrus.Errorf("Failed to create es torrent storage %v", err)
@@ -88,7 +76,6 @@ func main() {
 		logrus.Errorf("Failed to start crawler. %v", err)
 		return
 	}
-	go handler.RefreshTracker()
 
 	for {
 		c.LogStats()
@@ -105,10 +92,6 @@ type CrawlerTorrentHandler struct {
 	trackerBatchSize int
 }
 
-func (h *CrawlerTorrentHandler) SetTracker(tr tracker.Tracker) {
-	h.tracker = tr
-}
-
 func (h *CrawlerTorrentHandler) AddStorage(s storage.TorrentStorage) {
 	h.storages = append(h.storages, s)
 }
@@ -118,107 +101,5 @@ func (h *CrawlerTorrentHandler) HandleTorrent(torrent *bittorrent.Torrent) {
 	logrus.Infof("Creating torrent %s %s", t.InfoHash, t.Name)
 	for _, s := range h.storages {
 		s.Store(t)
-	}
-}
-
-func (h *CrawlerTorrentHandler) RefreshTracker() {
-	for {
-		h.refreshTracker()
-		time.Sleep(time.Second)
-	}
-}
-
-func (h *CrawlerTorrentHandler) refreshTracker() {
-	col := mgm.Coll(&model.Torrent{})
-	notTried := make([]*model.Torrent, 0)
-	err := col.SimpleFind(&notTried, bson.M{
-		"tracker_last_tried_at": bson.M{
-			operator.Eq: bson.TypeNull,
-		},
-	}, &options.FindOptions{
-		Sort: bson.M{
-			"updated_at": 1,
-		},
-		Limit: &h.trackerLimit,
-	})
-	if err != nil {
-		logrus.Errorf("Failed to load torrents for tracker. %v", err)
-		return
-	}
-	if len(notTried) >= int(h.trackerLimit) {
-		return
-	}
-	limit := h.trackerLimit - int64(len(notTried))
-	newRecords := make([]*model.Torrent, 0)
-	err = col.SimpleFind(&newRecords, bson.M{
-		"tracker_updated_at": bson.M{
-			operator.Eq: bson.TypeNull,
-		},
-	}, &options.FindOptions{
-		Sort: bson.M{
-			"tracker_last_tried_at": 1,
-		},
-		Limit: &limit,
-	})
-	if err != nil {
-		logrus.Errorf("Failed to load torrents for tracker. %v", err)
-		return
-	}
-	if len(newRecords) >= int(limit) {
-		return
-	}
-	limit = limit - int64(len(newRecords))
-	outdated := make([]*model.Torrent, 0)
-	age := time.Now().Add(-6 * time.Hour)
-	err = col.SimpleFind(&outdated, bson.M{
-		"tracker_updated_at": bson.M{
-			operator.Lte: age,
-		},
-	}, &options.FindOptions{
-		Sort: bson.M{
-			"tracker_updated_at": 1,
-		},
-		Limit: &limit,
-	})
-	if err != nil {
-		logrus.Errorf("Failed to load torrents for tracker. %v", err)
-		return
-	}
-	records := append(notTried, newRecords...)
-	records = append(records, outdated...)
-
-	hashes := make([][]byte, 0, len(records))
-	for _, record := range records {
-		_, err := col.UpdateByID(nil, record.InfoHash, bson.M{
-			operator.Set: bson.M{
-				"tracker_last_tried_at": time.Now(),
-			},
-		})
-		if err != nil {
-			logrus.Errorf("Failed to update tracker last tried at. %v", err)
-			return
-		}
-		hash, err := hex.DecodeString(record.InfoHash)
-		if err != nil {
-			logrus.Errorf("broken torrent record, skip tracker scrape")
-			return
-		}
-		hashes = append(hashes, hash)
-	}
-	scrapes, err := h.tracker.Scrape(hashes)
-	if err != nil {
-		logrus.Warnf("Failed to scrape %d torrents from tracker. %v", len(hashes), err)
-		return
-	}
-	now := time.Now()
-	for i, r := range scrapes {
-		records[i].Seeders = &r.Seeders
-		records[i].Leechers = &r.Leechers
-		records[i].UpdatedAt = now
-		records[i].TrackerUpdatedAt = &now
-		logrus.Infof("Updaing torrent %s %s %d:%d", records[i].InfoHash, records[i].Name, r.Seeders, r.Leechers)
-		for _, s := range h.storages {
-			s.Store(records[i])
-		}
 	}
 }

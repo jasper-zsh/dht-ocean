@@ -155,16 +155,19 @@ func (c *Crawler) makeNeighbours() {
 	cnt := 0
 	c.nodes = append(c.nodes, c.bootstrapNodes...)
 	for _, node := range c.nodes {
-		c.sendFindNode(c.nodeID, dht.GenerateNodeID(), node.Addr)
+		// AlphaReign
+		c.sendFindNode(dht.GetNeighbourID(node.NodeID, c.nodeID), dht.GenerateNodeID(), node.Addr)
+		// Official
+		// c.sendFindNode(c.nodeID, dht.GenerateNodeID(), node.Addr)
 		cnt += 1
 	}
-	logrus.Infof("Sending %d find_node queries.", cnt)
+	logrus.Debugf("Sending %d find_node queries.", cnt)
 	c.nodes = c.nodes[:0]
 }
 
 func (c *Crawler) sendFindNode(nodeID []byte, target []byte, addr *net.UDPAddr) {
 	//req := dht.NewFindNodeRequest(dht.GetNeighbourID(nodeID, c.nodeID), target)
-	req := dht.NewFindNodeRequest(c.nodeID, target)
+	req := dht.NewFindNodeRequest(nodeID, target)
 	req.SetT(c.tm.NextTransactionID())
 	_ = c.sendPacket(req.Packet, addr)
 }
@@ -243,14 +246,20 @@ func (c *Crawler) onGetPeersRequest(req *dht.GetPeersRequest, addr *net.UDPAddr)
 		}
 		return
 	}
-	res := dht.NewGetPeersResponse(dht.GetNeighbourID(req.InfoHash(), req.NodeID()), req.Token())
+	// AlphaReign
+	res := dht.NewGetPeersResponse(dht.GetNeighbourID(req.InfoHash(), c.nodeID), req.Token())
+	// Official
+	//res := dht.NewGetPeersResponse(c.nodeID, req.Token())
 	res.SetT(tid)
 	_ = c.sendPacket(res.Packet, addr)
 }
 
 func (c *Crawler) onAnnouncePeerRequest(req *dht.AnnouncePeerRequest, addr *net.UDPAddr) {
 	tid := req.GetT()
+	// AlphaReign
 	res := dht.NewEmptyResponsePacket(dht.GetNeighbourID(req.NodeID(), c.nodeID))
+	// Official
+	// res := dht.NewEmptyResponsePacket(c.nodeID)
 	res.SetT(tid)
 	_ = c.sendPacket(res, addr)
 	logrus.Debugf("Got announce peer %x %s", req.InfoHash(), req.Name())
@@ -265,7 +274,7 @@ func (c *Crawler) onAnnouncePeerRequest(req *dht.AnnouncePeerRequest, addr *net.
 		} else {
 			a = addr.String()
 		}
-		bt := bittorrent.NewBitTorrent(req.InfoHash(), a)
+		bt := bittorrent.NewBitTorrent(c.nodeID, req.InfoHash(), a)
 		err := bt.Start()
 		if err != nil {
 			logrus.Debugf("Failed to connect to peer to fetch metadata from %s %v", addr, err)
