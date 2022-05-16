@@ -29,7 +29,12 @@ func NewESTorrentStorage(host string) (*ESTorrentStorage, error) {
 }
 
 func (h *ESTorrentStorage) Store(torrent *model.Torrent) {
-	_, err := h.client.Update().Index("torrents").Id(torrent.InfoHash).Upsert(torrent).Do(h.ctx)
+	_, err := h.client.Update().
+		Index("torrents").
+		Id(torrent.InfoHash).
+		Doc(torrent).
+		DocAsUpsert(true).
+		Do(h.ctx)
 	if err != nil {
 		logrus.Errorf("Failed to index torrent %s %s %v", torrent.InfoHash, torrent.Name, err)
 	}

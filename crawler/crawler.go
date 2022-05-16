@@ -103,14 +103,14 @@ func (c *Crawler) Stop() {
 }
 
 func (c *Crawler) listen() {
-	buf := make([]byte, 4096)
+	buf := make([]byte, 65536)
 	for {
-		bytes, addr, err := c.conn.ReadFromUDP(buf)
+		transfered, addr, err := c.conn.ReadFromUDP(buf)
 		if err != nil {
 			continue
 		}
-		logrus.Tracef("Read %d bytes from udp %s", bytes, addr)
-		msg := make([]byte, bytes)
+		logrus.Tracef("Read %d bytes from udp %s", transfered, addr)
+		msg := make([]byte, transfered)
 		copy(msg, buf)
 		pkt := dht.NewPacketFromBuffer(msg)
 		pkt.Addr = addr
@@ -123,7 +123,7 @@ func (c *Crawler) handleMessage() {
 		pkt := <-c.packetBuffers
 		err := pkt.Decode()
 		if err != nil {
-			logrus.Warnf("Failed to parse DHT packet. %v", err)
+			logrus.Warnf("Failed to parse DHT packet. %s %v", pkt, err)
 			continue
 		}
 		c.onMessage(pkt, pkt.Addr)

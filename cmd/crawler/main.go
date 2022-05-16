@@ -57,13 +57,21 @@ func main() {
 		}
 		return false
 	})
-	handler := &CrawlerTorrentHandler{}
+	handler := &CrawlerTorrentHandler{
+		trackerLimit: 25,
+	}
 	c.AddTorrentHandler(handler)
 	tr, err := tracker.NewUDPTracker(cfg.Tracker)
 	if err != nil {
 		logrus.Errorf("Failed to create tracker. %v", err)
 		return
 	}
+	err = tr.Start()
+	if err != nil {
+		logrus.Errorf("Failed to start tracker client. %v", err)
+		return
+	}
+	defer tr.Stop()
 	handler.SetTracker(tr)
 	es, err := storage.NewESTorrentStorage(cfg.ES)
 	if err != nil {
@@ -106,6 +114,7 @@ func (h *CrawlerTorrentHandler) AddStorage(s storage.TorrentStorage) {
 
 func (h *CrawlerTorrentHandler) HandleTorrent(torrent *bittorrent.Torrent) {
 	t := model.NewTorrentFromCrawler(torrent)
+	logrus.Infof("Creating torrent %s %s", t.InfoHash, t.Name)
 	for _, s := range h.storages {
 		s.Store(t)
 	}
@@ -114,12 +123,14 @@ func (h *CrawlerTorrentHandler) HandleTorrent(torrent *bittorrent.Torrent) {
 func (h *CrawlerTorrentHandler) RefreshTracker() {
 	for {
 		h.refreshTracker()
+		time.Sleep(time.Second)
 	}
 }
 
 func (h *CrawlerTorrentHandler) refreshTracker() {
+	col := mgm.Coll(&model.Torrent{})
 	notTried := make([]*model.Torrent, 0)
-	err := mgm.Coll(&model.Torrent{}).SimpleFind(&notTried, bson.M{
+	err := col.SimpleFind(&notTried, bson.M{
 		"tracker_last_tried_at": bson.M{
 			operator.Eq: bson.TypeNull,
 		},
@@ -138,7 +149,7 @@ func (h *CrawlerTorrentHandler) refreshTracker() {
 	}
 	limit := h.trackerLimit - int64(len(notTried))
 	newRecords := make([]*model.Torrent, 0)
-	err = mgm.Coll(&model.Torrent{}).SimpleFind(&newRecords, bson.M{
+	err = col.SimpleFind(&newRecords, bson.M{
 		"tracker_updated_at": bson.M{
 			operator.Eq: bson.TypeNull,
 		},
@@ -158,7 +169,7 @@ func (h *CrawlerTorrentHandler) refreshTracker() {
 	limit = limit - int64(len(newRecords))
 	outdated := make([]*model.Torrent, 0)
 	age := time.Now().Add(-6 * time.Hour)
-	err = mgm.Coll(&model.Torrent{}).SimpleFind(&outdated, bson.M{
+	err = col.SimpleFind(&outdated, bson.M{
 		"tracker_updated_at": bson.M{
 			operator.Lte: age,
 		},
@@ -174,34 +185,39 @@ func (h *CrawlerTorrentHandler) refreshTracker() {
 	}
 	records := append(notTried, newRecords...)
 	records = append(records, outdated...)
-	for i := 0; i*h.trackerBatchSize < len(records); i++ {
-		var end int
-		if len(records) < (i+1)*h.trackerBatchSize {
-			end = len(records)
-		} else {
-			end = (i + 1) * h.trackerBatchSize
-		}
-		chunk := records[i*h.trackerBatchSize : end]
-		hashes := make([][]byte, len(chunk))
-		for _, chunk := range chunk {
-			hash, err := hex.DecodeString(chunk.InfoHash)
-			if err != nil {
-				logrus.Errorf("broken torrent record, skip tracker scrape")
-				return
-			}
-			hashes = append(hashes, hash)
-		}
-		scrapes, err := h.tracker.Scrape(hashes)
+
+	hashes := make([][]byte, 0, len(records))
+	for _, record := range records {
+		_, err := col.UpdateByID(nil, record.InfoHash, bson.M{
+			operator.Set: bson.M{
+				"tracker_last_tried_at": time.Now(),
+			},
+		})
 		if err != nil {
-			logrus.Warnf("Failed to scrape %d torrents from tracker. %v", len(hashes), err)
+			logrus.Errorf("Failed to update tracker last tried at. %v", err)
 			return
 		}
-		for i, r := range scrapes {
-			records[i].Seeders = &r.Seeders
-			records[i].Leechers = &r.Leechers
-			for _, s := range h.storages {
-				s.Store(records[i])
-			}
+		hash, err := hex.DecodeString(record.InfoHash)
+		if err != nil {
+			logrus.Errorf("broken torrent record, skip tracker scrape")
+			return
+		}
+		hashes = append(hashes, hash)
+	}
+	scrapes, err := h.tracker.Scrape(hashes)
+	if err != nil {
+		logrus.Warnf("Failed to scrape %d torrents from tracker. %v", len(hashes), err)
+		return
+	}
+	now := time.Now()
+	for i, r := range scrapes {
+		records[i].Seeders = &r.Seeders
+		records[i].Leechers = &r.Leechers
+		records[i].UpdatedAt = now
+		records[i].TrackerUpdatedAt = &now
+		logrus.Infof("Updaing torrent %s %s %d:%d", records[i].InfoHash, records[i].Name, r.Seeders, r.Leechers)
+		for _, s := range h.storages {
+			s.Store(records[i])
 		}
 	}
 }
