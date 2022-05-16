@@ -246,6 +246,10 @@ func (c *Crawler) onGetPeersRequest(req *dht.GetPeersRequest, addr *net.UDPAddr)
 		}
 		return
 	}
+	nid := req.InfoHash()
+	if len(nid) < 20 {
+		return
+	}
 	// AlphaReign
 	res := dht.NewGetPeersResponse(dht.GetNeighbourID(req.InfoHash(), c.nodeID), req.Token())
 	// Official

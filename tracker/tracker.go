@@ -38,12 +38,13 @@ func (u *TrackerUpdater) Run() {
 	}
 }
 
-func (u *TrackerUpdater) refreshTracker() {
+func (u *TrackerUpdater) getRecords() []*model.Torrent {
+	records := make([]*model.Torrent, 0)
 	col := mgm.Coll(&model.Torrent{})
 	notTried := make([]*model.Torrent, 0)
 	err := col.SimpleFind(&notTried, bson.M{
 		"tracker_last_tried_at": bson.M{
-			operator.Eq: bson.TypeNull,
+			operator.Eq: nil,
 		},
 	}, &options.FindOptions{
 		Sort: bson.M{
@@ -53,16 +54,17 @@ func (u *TrackerUpdater) refreshTracker() {
 	})
 	if err != nil {
 		logrus.Errorf("Failed to load torrents for tracker. %v", err)
-		return
+		return nil
 	}
-	if len(notTried) >= int(u.trackerLimit) {
-		return
-	}
+	records = append(records, notTried...)
 	limit := u.trackerLimit - int64(len(notTried))
+	if limit == 0 {
+		return records
+	}
 	newRecords := make([]*model.Torrent, 0)
 	err = col.SimpleFind(&newRecords, bson.M{
 		"tracker_updated_at": bson.M{
-			operator.Eq: bson.TypeNull,
+			operator.Eq: nil,
 		},
 	}, &options.FindOptions{
 		Sort: bson.M{
@@ -72,12 +74,13 @@ func (u *TrackerUpdater) refreshTracker() {
 	})
 	if err != nil {
 		logrus.Errorf("Failed to load torrents for tracker. %v", err)
-		return
+		return nil
 	}
-	if len(newRecords) >= int(limit) {
-		return
-	}
+	records = append(records, newRecords...)
 	limit = limit - int64(len(newRecords))
+	if limit == 0 {
+		return records
+	}
 	outdated := make([]*model.Torrent, 0)
 	age := time.Now().Add(-6 * time.Hour)
 	err = col.SimpleFind(&outdated, bson.M{
@@ -92,10 +95,15 @@ func (u *TrackerUpdater) refreshTracker() {
 	})
 	if err != nil {
 		logrus.Errorf("Failed to load torrents for tracker. %v", err)
-		return
+		return nil
 	}
-	records := append(notTried, newRecords...)
 	records = append(records, outdated...)
+	return records
+}
+
+func (u *TrackerUpdater) refreshTracker() {
+	col := mgm.Coll(&model.Torrent{})
+	records := u.getRecords()
 
 	hashes := make([][]byte, 0, len(records))
 	for _, record := range records {
@@ -126,7 +134,7 @@ func (u *TrackerUpdater) refreshTracker() {
 		records[i].Leechers = &r.Leechers
 		records[i].UpdatedAt = now
 		records[i].TrackerUpdatedAt = &now
-		logrus.Infof("Updaing torrent %s %s %d:%d", records[i].InfoHash, records[i].Name, r.Seeders, r.Leechers)
+		logrus.Infof("Updaing torrent %s %-30.30s %d:%d", records[i].InfoHash, records[i].Name, r.Seeders, r.Leechers)
 		for _, s := range u.storages {
 			s.Store(records[i])
 		}

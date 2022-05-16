@@ -81,7 +81,8 @@ func (t *UDPTracker) connect() error {
 
 func (t *UDPTracker) readUntilTid(tid uint32, timeout time.Duration) ([]byte, error) {
 	timeoutAt := time.Now().Add(timeout)
-	_ = t.conn.SetDeadline(timeoutAt)
+	_ = t.conn.SetReadDeadline(timeoutAt)
+
 	buf := make([]byte, 4096)
 	for {
 		bytes, _, err := t.conn.ReadFromUDP(buf)
