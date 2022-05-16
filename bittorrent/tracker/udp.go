@@ -12,6 +12,7 @@ const (
 	protocolID    uint64 = 0x41727101980
 	actionConnect uint32 = 0
 	actionScrape  uint32 = 2
+	actionError   uint32 = 3
 )
 
 var _ Tracker = (*UDPTracker)(nil)
@@ -83,12 +84,12 @@ func (t *UDPTracker) readUntilTid(tid uint32, timeout time.Duration) ([]byte, er
 	_ = t.conn.SetDeadline(timeoutAt)
 	buf := make([]byte, 4096)
 	for {
-		_, _, err := t.conn.ReadFromUDP(buf)
+		bytes, _, err := t.conn.ReadFromUDP(buf)
 		if err != nil {
 			return nil, err
 		}
 		if binary.BigEndian.Uint32(buf[4:]) == tid {
-			return buf, nil
+			return buf[:bytes], nil
 		}
 		if timeoutAt.Before(time.Now()) {
 			return nil, fmt.Errorf("timeout")
@@ -113,8 +114,20 @@ func (t *UDPTracker) Scrape(infoHashes [][]byte) ([]*ScrapeResponse, error) {
 	if err != nil {
 		return nil, err
 	}
+	if binary.BigEndian.Uint32(resp) == actionError {
+		return nil, fmt.Errorf("error resp: %s", resp[8:])
+	}
 	if binary.BigEndian.Uint32(resp) != actionScrape {
 		return nil, fmt.Errorf("illegal scrape response")
 	}
-	return nil, nil
+	respCount := (len(resp) - 8) / 12
+	resps := make([]*ScrapeResponse, respCount)
+	for i := 0; i < respCount; i++ {
+		r := &ScrapeResponse{}
+		r.Seeders = binary.BigEndian.Uint32(resp[8+12*i:])
+		r.Completed = binary.BigEndian.Uint32(resp[12+12*i:])
+		r.Leechers = binary.BigEndian.Uint32(resp[16+12*i:])
+		resps[i] = r
+	}
+	return resps, nil
 }

@@ -1,9 +1,9 @@
 package tracker
 
 type ScrapeResponse struct {
-	Seeders   int32
-	Completed int32
-	Leechers  int32
+	Seeders   uint32
+	Completed uint32
+	Leechers  uint32
 }
 
 type Tracker interface {
