@@ -1,18 +1,16 @@
 package storage
 
 import (
-	"dht-ocean/bittorrent"
 	"dht-ocean/model"
 	"github.com/kamva/mgm/v3"
 	"github.com/sirupsen/logrus"
 )
 
-var _ bittorrent.TorrentHandler = (*MongoTorrentHandler)(nil)
+var _ TorrentStorage = (*MongoTorrentStorage)(nil)
 
-type MongoTorrentHandler struct{}
+type MongoTorrentStorage struct{}
 
-func (m MongoTorrentHandler) HandleTorrent(torrent *bittorrent.Torrent) {
-	t := model.NewTorrentFromCrawler(torrent)
+func (m MongoTorrentStorage) Store(t *model.Torrent) {
 	col := mgm.Coll(t)
 	err := col.Create(t)
 	if err != nil {

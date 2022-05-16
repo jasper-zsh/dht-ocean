@@ -15,8 +15,11 @@ require (
 	github.com/golang/snappy v0.0.1 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.4 // indirect
+	github.com/josharian/intern v1.0.0 // indirect
 	github.com/kamva/mgm/v3 v3.4.1 // indirect
 	github.com/klauspost/compress v1.9.5 // indirect
+	github.com/mailru/easyjson v0.7.7 // indirect
+	github.com/olivere/elastic/v7 v7.0.32 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/xdg-go/pbkdf2 v1.0.0 // indirect

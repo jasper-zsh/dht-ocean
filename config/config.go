@@ -9,6 +9,8 @@ type Config struct {
 	BootstrapNodes []string `yaml:"bootstrap_nodes"`
 	Listen         string   `yaml:"listen"`
 	Mongo          string   `yaml:"mongo"`
+	Tracker        string   `yaml:"tracker"`
+	ES             string   `yaml:"es"`
 }
 
 func ReadConfigFromFile(path string) (*Config, error) {

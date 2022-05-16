@@ -10,19 +10,19 @@ import (
 var _ mgm.Model = (*Torrent)(nil)
 
 type Torrent struct {
-	InfoHash           string     `bson:"_id"`
-	Name               string     `bson:"name"`
-	Files              []*File    `bson:"files"`
-	Tags               []string   `bson:"tags"`
-	Type               string     `bson:"type"`
-	Length             int64      `bson:"length"`
-	CreatedAt          time.Time  `bson:"created_at"`
-	UpdatedAt          time.Time  `bson:"updated_at"`
-	Seeders            *int       `bson:"seeders"`
-	Leechers           *int       `bson:"leechers"`
-	TrackerUpdatedAt   *time.Time `bson:"tracker_updated_at"`
-	SearchUpdated      bool       `bson:"search_updated"`
-	TrackerLastTriedAt *time.Time `bson:"tracker_last_tried_at"`
+	InfoHash           string     `bson:"_id" json:"info_hash"`
+	Name               string     `bson:"name" json:"name"`
+	Files              []*File    `bson:"files" json:"files"`
+	Tags               []string   `bson:"tags" json:"tags,omitempty"`
+	Type               string     `bson:"type" json:"type,omitempty"`
+	Length             int64      `bson:"length" json:"length"`
+	CreatedAt          time.Time  `bson:"created_at" json:"created_at"`
+	UpdatedAt          time.Time  `bson:"updated_at" json:"updated_at"`
+	Seeders            *uint32    `bson:"seeders" json:"seeders,omitempty"`
+	Leechers           *uint32    `bson:"leechers" json:"leechers,omitempty"`
+	TrackerUpdatedAt   *time.Time `bson:"tracker_updated_at" json:"tracker_updated_at,omitempty"`
+	SearchUpdated      bool       `bson:"search_updated" json:"search_updated"`
+	TrackerLastTriedAt *time.Time `bson:"tracker_last_tried_at" json:"tracker_last_tried_at,omitempty"`
 }
 
 func (t *Torrent) PrepareID(id interface{}) (interface{}, error) {
