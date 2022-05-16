@@ -271,6 +271,9 @@ func (bt *BitTorrent) readExtMessage() ([]byte, error) {
 		if err != nil {
 			return nil, errors.WithStack(err)
 		}
+		if len(msg) == 0 {
+			continue
+		}
 		if msg[0] == btMsgID {
 			return msg[1:], nil
 		}
