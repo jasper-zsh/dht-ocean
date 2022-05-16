@@ -128,7 +128,7 @@ func (c *Crawler) handleMessage() {
 		pkt := <-c.packetBuffers
 		err := pkt.Decode()
 		if err != nil {
-			logrus.Warnf("Failed to parse DHT packet. %s %v", pkt, err)
+			logrus.Debugf("Failed to parse DHT packet. %s %v", pkt, err)
 			continue
 		}
 		c.onMessage(pkt, pkt.Addr)
