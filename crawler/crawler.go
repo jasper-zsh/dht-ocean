@@ -24,6 +24,7 @@ type Crawler struct {
 	packetBuffers   chan *dht.Packet
 	torrentHandlers []bittorrent.TorrentHandler
 	infoHashFilter  InfoHashFilter
+	maxQueueSize    int
 }
 
 func NewCrawler(address string, nodeID []byte) (*Crawler, error) {
@@ -40,6 +41,10 @@ func NewCrawler(address string, nodeID []byte) (*Crawler, error) {
 		packetBuffers: make(chan *dht.Packet, 1000),
 	}
 	return c, nil
+}
+
+func (c *Crawler) SetMaxQueueSize(size int) {
+	c.maxQueueSize = size
 }
 
 func (c *Crawler) SetBootstrapNodes(addrs []string) {
@@ -217,11 +222,13 @@ func (c *Crawler) onMessage(packet *dht.Packet, addr *net.UDPAddr) {
 
 func (c *Crawler) onFindNodeResponse(nodes []*dht.Node) {
 	for _, node := range nodes {
+		if c.maxQueueSize > 0 && len(c.nodes) > c.maxQueueSize {
+			return
+		}
 		if !node.Addr.IP.IsUnspecified() &&
 			!bytes.Equal(c.nodeID, node.NodeID) &&
 			node.Addr.Port < 65536 &&
-			node.Addr.Port > 0 &&
-			len(c.nodes) < 2000 {
+			node.Addr.Port > 0 {
 			c.nodes = append(c.nodes, node)
 		}
 	}

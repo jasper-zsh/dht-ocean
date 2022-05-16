@@ -11,6 +11,7 @@ type Config struct {
 	Mongo          string   `yaml:"mongo"`
 	Tracker        string   `yaml:"tracker"`
 	ES             string   `yaml:"es"`
+	MaxQueueSize   int      `yaml:"max_queue_size"`
 }
 
 func ReadConfigFromFile(path string) (*Config, error) {

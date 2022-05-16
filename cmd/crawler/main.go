@@ -48,6 +48,7 @@ func main() {
 		logrus.Errorf("Failed to create crawler. %v", err)
 		return
 	}
+	c.SetMaxQueueSize(cfg.MaxQueueSize)
 	c.SetBootstrapNodes(cfg.BootstrapNodes)
 	c.SetInfoHashFilter(func(infoHash []byte) bool {
 		t := &model.Torrent{}
