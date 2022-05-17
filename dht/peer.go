@@ -27,7 +27,7 @@ func (r *GetPeersRequest) InfoHash() []byte {
 	if len(raw) < 20 {
 		return nil
 	}
-	return raw[20:]
+	return raw[:20]
 }
 
 func (r *GetPeersRequest) Token() []byte {
