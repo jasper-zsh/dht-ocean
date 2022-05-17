@@ -12,6 +12,7 @@ import (
 	"encoding/hex"
 	"github.com/kamva/mgm/v3"
 	"github.com/sirupsen/logrus"
+	"go.mongodb.org/mongo-driver/bson"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
@@ -54,12 +55,13 @@ func main() {
 	c.SetMaxQueueSize(cfg.MaxQueueSize)
 	c.SetBootstrapNodes(cfg.BootstrapNodes)
 	c.SetInfoHashFilter(func(infoHash []byte) bool {
-		t := &model.Torrent{}
-		err := col.FindByID(hex.EncodeToString(infoHash), t)
+		cnt, err := col.CountDocuments(nil, bson.M{
+			"_id": hex.EncodeToString(infoHash),
+		})
 		if err != nil {
-			return true
+			return false
 		}
-		return false
+		return cnt == 0
 	})
 	handler := &CrawlerTorrentHandler{
 		trackerLimit: 25,
