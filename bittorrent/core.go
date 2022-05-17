@@ -52,7 +52,7 @@ func NewBitTorrent(nodeID, infoHash []byte, addr string) *BitTorrent {
 }
 
 func (bt *BitTorrent) Start() error {
-	conn, err := net.Dial("tcp", bt.addr)
+	conn, err := net.DialTimeout("tcp", bt.addr, time.Second*10)
 	if err != nil {
 		return errors.WithStack(err)
 	}
