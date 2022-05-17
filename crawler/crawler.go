@@ -249,6 +249,9 @@ func (c *Crawler) onGetPeersRequest(req *dht.GetPeersRequest, addr *net.UDPAddr)
 	nid := req.InfoHash()
 	if len(nid) < 20 {
 		logrus.Debugf("Got get_peer request with illegal infohash %x, drop.", nid)
+		if logrus.GetLevel() == logrus.DebugLevel {
+			req.Print()
+		}
 		return
 	}
 	logrus.Debugf("Got get_peer request for infohash %x", nid)
