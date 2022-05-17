@@ -6,6 +6,7 @@ import (
 	"dht-ocean/model"
 	"dht-ocean/storage"
 	"github.com/kamva/mgm/v3"
+	"github.com/kamva/mgm/v3/operator"
 	"github.com/sirupsen/logrus"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -60,7 +61,11 @@ func indexTorrents(s storage.TorrentStorage, limit int64) int {
 		if err != nil {
 			return 0
 		}
-		err = col.Update(record)
+		_, err = col.UpdateByID(nil, record.InfoHash, bson.M{
+			operator.Set: bson.M{
+				"search_updated": true,
+			},
+		})
 		if err != nil {
 			logrus.Errorf("Failed to update search_updated")
 			return 0

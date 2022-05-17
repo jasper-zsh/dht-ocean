@@ -12,12 +12,16 @@ import (
 	"encoding/hex"
 	"github.com/kamva/mgm/v3"
 	"github.com/sirupsen/logrus"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"time"
 )
 
 func main() {
 	//logrus.SetLevel(logrus.DebugLevel)
+
+	http.ListenAndServe(":6060", nil)
 
 	cfg, err := config.ReadConfigFromFile("config.yaml")
 	if err != nil {

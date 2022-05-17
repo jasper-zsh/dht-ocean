@@ -189,7 +189,7 @@ func (bt *BitTorrent) extHandshake() (*ExtHandshakeResult, error) {
 }
 
 func (bt *BitTorrent) requestPieces(ext *ExtHandshakeResult) ([]*Piece, error) {
-	pieces := make([]*Piece, 0, ext.NumPieces)
+	pieces := make([]*Piece, 0)
 	for i := 0; i < ext.NumPieces; i++ {
 		err := bt.requestPiece(ext, i)
 		if err != nil {
