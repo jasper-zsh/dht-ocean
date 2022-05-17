@@ -12,19 +12,11 @@ func NewGetPeersRequestFromPacket(pkt *Packet) *GetPeersRequest {
 }
 
 func (r *GetPeersRequest) NodeID() []byte {
-	a := r.Get("a")
-	if a == nil {
-		return nil
-	}
-	return bencode.MustGetBytes(a.(map[string]any), "id")
+	return bencode.MustGetBytes(r.Data, "a.id")
 }
 
 func (r *GetPeersRequest) rawInfoHash() []byte {
-	a := r.Get("a")
-	if a == nil {
-		return nil
-	}
-	return bencode.MustGetBytes(a.(map[string]any), "info_hash")
+	return bencode.MustGetBytes(r.Data, "a.info_hash")
 }
 
 func (r *GetPeersRequest) InfoHash() []byte {
@@ -74,11 +66,7 @@ func NewAnnouncePeerRequestFromPacket(pkt *Packet) *AnnouncePeerRequest {
 }
 
 func (r *AnnouncePeerRequest) NodeID() []byte {
-	a := r.Get("a")
-	if a == nil {
-		return nil
-	}
-	return bencode.MustGetBytes(a.(map[string]any), "id")
+	return bencode.MustGetBytes(r.Data, "a.id")
 }
 
 func (r *AnnouncePeerRequest) InfoHash() []byte {
