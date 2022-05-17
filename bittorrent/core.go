@@ -133,7 +133,8 @@ func (bt *BitTorrent) handshake() error {
 	if b == 0 {
 		return fmt.Errorf("read empty protocol length")
 	}
-	data := make([]byte, pLength[0]+48)
+	dataLen := int(pLength[0]) + 48
+	data := make([]byte, dataLen)
 	_, err = io.ReadFull(bt.conn, data)
 	if err != nil {
 		return errors.WithStack(err)
