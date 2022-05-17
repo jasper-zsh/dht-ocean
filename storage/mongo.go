@@ -12,6 +12,8 @@ var _ TorrentStorage = (*MongoTorrentStorage)(nil)
 type MongoTorrentStorage struct{}
 
 func (m MongoTorrentStorage) Store(t *model.Torrent) error {
+	t.SearchUpdated = false
+
 	col := mgm.Coll(t)
 	opts := &options.UpdateOptions{}
 	opts.SetUpsert(true)
