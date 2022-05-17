@@ -12,6 +12,7 @@ import (
 	"io"
 	"math"
 	"net"
+	"time"
 )
 
 var (
@@ -70,15 +71,25 @@ func (bt *BitTorrent) Stop() error {
 func (bt *BitTorrent) sendMessage(msg []byte) error {
 	lenB := make([]byte, 4)
 	binary.BigEndian.PutUint32(lenB, uint32(len(msg)))
-	_, err := bt.conn.Write(lenB)
+	_, err := bt.write(lenB)
 	if err != nil {
 		return err
 	}
-	_, err = bt.conn.Write(msg)
+	_, err = bt.write(msg)
 	if err != nil {
 		return err
 	}
 	return nil
+}
+
+func (bt *BitTorrent) write(data []byte) (int, error) {
+	_ = bt.conn.SetWriteDeadline(time.Now().Add(time.Second * 10))
+	return bt.conn.Write(data)
+}
+
+func (bt *BitTorrent) read(data []byte) (int, error) {
+	_ = bt.conn.SetReadDeadline(time.Now().Add(time.Second * 10))
+	return io.ReadFull(bt.conn, data)
 }
 
 func (bt *BitTorrent) GetTorrent() (*Torrent, error) {
@@ -121,12 +132,12 @@ func (bt *BitTorrent) handshake() error {
 	pkt = append(pkt, dht.GenerateNodeID()...)
 	// Official
 	//pkt = append(pkt, bt.nodeID...)
-	_, err := bt.conn.Write(pkt)
+	_, err := bt.write(pkt)
 	if err != nil {
 		return errors.WithStack(err)
 	}
 	pLength := make([]byte, 1)
-	b, err := io.ReadFull(bt.conn, pLength)
+	b, err := bt.read(pLength)
 	if err != nil {
 		return errors.WithStack(err)
 	}
@@ -135,7 +146,7 @@ func (bt *BitTorrent) handshake() error {
 	}
 	dataLen := int(pLength[0]) + 48
 	data := make([]byte, dataLen)
-	_, err = io.ReadFull(bt.conn, data)
+	_, err = bt.read(data)
 	if err != nil {
 		return errors.WithStack(err)
 	}
@@ -253,13 +264,13 @@ func (bt *BitTorrent) readPiece() (*Piece, error) {
 func (bt *BitTorrent) readMessage() ([]byte, error) {
 	msgLengthB := make([]byte, 4)
 	var msgLength uint32
-	_, err := io.ReadFull(bt.conn, msgLengthB)
+	_, err := bt.read(msgLengthB)
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
 	msgLength = binary.BigEndian.Uint32(msgLengthB)
 	msg := make([]byte, msgLength)
-	_, err = io.ReadFull(bt.conn, msg)
+	_, err = bt.read(msg)
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
