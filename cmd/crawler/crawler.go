@@ -22,7 +22,7 @@ import (
 func main() {
 	//logrus.SetLevel(logrus.DebugLevel)
 
-	http.ListenAndServe(":6060", nil)
+	go http.ListenAndServe(":6060", nil)
 
 	cfg, err := config.ReadConfigFromFile("config.yaml")
 	if err != nil {
