@@ -11,12 +11,14 @@ var _ TorrentStorage = (*MongoTorrentStorage)(nil)
 
 type MongoTorrentStorage struct{}
 
-func (m MongoTorrentStorage) Store(t *model.Torrent) {
+func (m MongoTorrentStorage) Store(t *model.Torrent) error {
 	col := mgm.Coll(t)
 	opts := &options.UpdateOptions{}
 	opts.SetUpsert(true)
 	err := col.Update(t, opts)
 	if err != nil {
 		logrus.Errorf("Failed to save torrent %s %s %v", t.InfoHash, t.Name, err)
+		return err
 	}
+	return nil
 }

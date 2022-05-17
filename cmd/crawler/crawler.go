@@ -62,12 +62,6 @@ func main() {
 	}
 	c.AddTorrentHandler(handler)
 
-	es, err := storage.NewESTorrentStorage(cfg.ES)
-	if err != nil {
-		logrus.Errorf("Failed to create es torrent storage %v", err)
-		return
-	}
-	handler.AddStorage(es)
 	handler.AddStorage(&storage.MongoTorrentStorage{})
 
 	err = c.Run()
