@@ -34,12 +34,6 @@ func main() {
 	}
 	defer tr.Stop()
 	updater := tracker2.NewTrackerUpdater(tr, cfg.TrackerLimit)
-	es, err := storage.NewESTorrentStorage(cfg.ES)
-	if err != nil {
-		logrus.Errorf("Failed to create es torrent storage %v", err)
-		return
-	}
-	updater.AddStorage(es)
 	updater.AddStorage(&storage.MongoTorrentStorage{})
 
 	updater.Run()

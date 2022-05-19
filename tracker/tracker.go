@@ -34,7 +34,6 @@ func (u *TrackerUpdater) AddStorage(storage storage.TorrentStorage) {
 func (u *TrackerUpdater) Run() {
 	for {
 		u.refreshTracker()
-		time.Sleep(time.Second)
 	}
 }
 
@@ -102,20 +101,12 @@ func (u *TrackerUpdater) getRecords() []*model.Torrent {
 }
 
 func (u *TrackerUpdater) refreshTracker() {
-	col := mgm.Coll(&model.Torrent{})
 	records := u.getRecords()
 
+	now := time.Now()
 	hashes := make([][]byte, 0, len(records))
 	for _, record := range records {
-		_, err := col.UpdateByID(nil, record.InfoHash, bson.M{
-			operator.Set: bson.M{
-				"tracker_last_tried_at": time.Now(),
-			},
-		})
-		if err != nil {
-			logrus.Errorf("Failed to update tracker last tried at. %v", err)
-			return
-		}
+		record.TrackerLastTriedAt = &now
 		hash, err := hex.DecodeString(record.InfoHash)
 		if err != nil {
 			logrus.Errorf("broken torrent record, skip tracker scrape")
@@ -128,11 +119,9 @@ func (u *TrackerUpdater) refreshTracker() {
 		logrus.Warnf("Failed to scrape %d torrents from tracker. %v", len(hashes), err)
 		return
 	}
-	now := time.Now()
 	for i, r := range scrapes {
 		records[i].Seeders = &r.Seeders
 		records[i].Leechers = &r.Leechers
-		records[i].UpdatedAt = now
 		records[i].TrackerUpdatedAt = &now
 		logrus.Infof("Updaing torrent %s %-30.30s %d:%d", records[i].InfoHash, records[i].Name, r.Seeders, r.Leechers)
 		for _, s := range u.storages {
