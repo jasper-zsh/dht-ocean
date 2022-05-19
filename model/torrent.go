@@ -16,8 +16,8 @@ type Torrent struct {
 	Tags               []string   `bson:"tags" json:"tags,omitempty"`
 	Type               string     `bson:"type" json:"type,omitempty"`
 	Length             int64      `bson:"length" json:"length"`
-	CreatedAt          time.Time  `bson:"created_at" json:"created_at"`
-	UpdatedAt          time.Time  `bson:"updated_at" json:"updated_at"`
+	CreatedAt          *time.Time `bson:"created_at" json:"created_at"`
+	UpdatedAt          *time.Time `bson:"updated_at" json:"updated_at"`
 	Seeders            *uint32    `bson:"seeders" json:"seeders,omitempty"`
 	Leechers           *uint32    `bson:"leechers" json:"leechers,omitempty"`
 	TrackerUpdatedAt   *time.Time `bson:"tracker_updated_at" json:"tracker_updated_at,omitempty"`
@@ -35,18 +35,6 @@ func (t *Torrent) GetID() interface{} {
 
 func (t *Torrent) SetID(id interface{}) {
 	t.InfoHash = id.(string)
-}
-
-func (t *Torrent) Creating() error {
-	t.CreatedAt = time.Now().UTC()
-	t.SearchUpdated = false
-	return nil
-}
-
-func (t *Torrent) Saving() error {
-	t.UpdatedAt = time.Now().UTC()
-	t.SearchUpdated = false
-	return nil
 }
 
 func NewTorrentFromCrawler(t *bittorrent.Torrent) *Torrent {
