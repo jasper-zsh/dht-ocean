@@ -2,10 +2,6 @@ package logic
 
 import (
 	"context"
-	"github.com/kamva/mgm/v3/operator"
-	"go.mongodb.org/mongo-driver/bson"
-	"time"
-
 	"dht-ocean/ocean/internal/svc"
 	"dht-ocean/ocean/ocean"
 
@@ -27,16 +23,7 @@ func NewUpdateTrackerLogic(ctx context.Context, svcCtx *svc.ServiceContext) *Upd
 }
 
 func (l *UpdateTrackerLogic) UpdateTracker(in *ocean.UpdateTrackerRequest) (*ocean.UpdateTrackerResponse, error) {
-	now := time.Now()
-	_, err := l.svcCtx.TorrentCollection.UpdateByID(l.ctx, in.InfoHash, bson.M{
-		operator.Set: bson.M{
-			"seeders":            in.Seeders,
-			"leechers":           in.Leechers,
-			"tracker_updated_at": now,
-			"updated_at":         now,
-			"search_updated":     false,
-		},
-	})
+	err := svc.UpdateTracker(l.ctx, in)
 	if err != nil {
 		return nil, err
 	}

@@ -4,6 +4,8 @@ Ocean:
       - 127.0.0.1:2379
     Key: ocean.rpc
 DHTListen: ":6881"
+Redis:
+  Host: 127.0.0.1:6379
 BootstrapNodes:
   - dht.transmissionbt.com:6881
   - tracker.moeking.me:6881

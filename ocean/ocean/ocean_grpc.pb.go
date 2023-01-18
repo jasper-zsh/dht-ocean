@@ -26,6 +26,7 @@ type OceanClient interface {
 	CommitTorrent(ctx context.Context, in *CommitTorrentRequest, opts ...grpc.CallOption) (*CommitTorrentResponse, error)
 	ListTorrentInfoForTracker(ctx context.Context, in *ListTorrentInfoForTrackerRequest, opts ...grpc.CallOption) (*ListTorrentInfoForTrackerResponse, error)
 	UpdateTracker(ctx context.Context, in *UpdateTrackerRequest, opts ...grpc.CallOption) (*UpdateTrackerResponse, error)
+	BatchUpdateTracker(ctx context.Context, in *BatchUpdateTrackerRequest, opts ...grpc.CallOption) (*BatchUpdateTrackerResponse, error)
 }
 
 type oceanClient struct {
@@ -72,6 +73,15 @@ func (c *oceanClient) UpdateTracker(ctx context.Context, in *UpdateTrackerReques
 	return out, nil
 }
 
+func (c *oceanClient) BatchUpdateTracker(ctx context.Context, in *BatchUpdateTrackerRequest, opts ...grpc.CallOption) (*BatchUpdateTrackerResponse, error) {
+	out := new(BatchUpdateTrackerResponse)
+	err := c.cc.Invoke(ctx, "/ocean.Ocean/BatchUpdateTracker", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // OceanServer is the server API for Ocean service.
 // All implementations must embed UnimplementedOceanServer
 // for forward compatibility
@@ -80,6 +90,7 @@ type OceanServer interface {
 	CommitTorrent(context.Context, *CommitTorrentRequest) (*CommitTorrentResponse, error)
 	ListTorrentInfoForTracker(context.Context, *ListTorrentInfoForTrackerRequest) (*ListTorrentInfoForTrackerResponse, error)
 	UpdateTracker(context.Context, *UpdateTrackerRequest) (*UpdateTrackerResponse, error)
+	BatchUpdateTracker(context.Context, *BatchUpdateTrackerRequest) (*BatchUpdateTrackerResponse, error)
 	mustEmbedUnimplementedOceanServer()
 }
 
@@ -98,6 +109,9 @@ func (UnimplementedOceanServer) ListTorrentInfoForTracker(context.Context, *List
 }
 func (UnimplementedOceanServer) UpdateTracker(context.Context, *UpdateTrackerRequest) (*UpdateTrackerResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UpdateTracker not implemented")
+}
+func (UnimplementedOceanServer) BatchUpdateTracker(context.Context, *BatchUpdateTrackerRequest) (*BatchUpdateTrackerResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method BatchUpdateTracker not implemented")
 }
 func (UnimplementedOceanServer) mustEmbedUnimplementedOceanServer() {}
 
@@ -184,6 +198,24 @@ func _Ocean_UpdateTracker_Handler(srv interface{}, ctx context.Context, dec func
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Ocean_BatchUpdateTracker_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BatchUpdateTrackerRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OceanServer).BatchUpdateTracker(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/ocean.Ocean/BatchUpdateTracker",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OceanServer).BatchUpdateTracker(ctx, req.(*BatchUpdateTrackerRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Ocean_ServiceDesc is the grpc.ServiceDesc for Ocean service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -206,6 +238,10 @@ var Ocean_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "UpdateTracker",
 			Handler:    _Ocean_UpdateTracker_Handler,
+		},
+		{
+			MethodName: "BatchUpdateTracker",
+			Handler:    _Ocean_BatchUpdateTracker_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

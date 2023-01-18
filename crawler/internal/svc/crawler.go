@@ -9,8 +9,8 @@ import (
 	"dht-ocean/ocean/ocean"
 	"dht-ocean/ocean/oceanclient"
 	"fmt"
-	"github.com/bits-and-blooms/bloom"
 	"github.com/mitchellh/mapstructure"
+	"github.com/zeromicro/go-zero/core/bloom"
 	"github.com/zeromicro/go-zero/core/logx"
 	"github.com/zeromicro/go-zero/core/threading"
 	"net"
@@ -34,7 +34,7 @@ type Crawler struct {
 	packetBuffers  chan *dht.Packet
 	maxQueueSize   int
 	svcCtx         *ServiceContext
-	bloomFilter    *bloom.BloomFilter
+	bloomFilter    *bloom.Filter
 }
 
 func InjectCrawler(svcCtx *ServiceContext) {
@@ -70,8 +70,9 @@ func NewCrawler(svcCtx *ServiceContext) (*Crawler, error) {
 		packetBuffers: make(chan *dht.Packet, 1000),
 		maxQueueSize:  svcCtx.Config.MaxQueueSize,
 		svcCtx:        svcCtx,
-		bloomFilter:   bloom.NewWithEstimates(10000000, 0.01),
 	}
+	redis := c.svcCtx.Config.Redis.NewRedis()
+	c.bloomFilter = bloom.New(redis, "torrent_bloom", 1024*1024*5)
 	c.SetBootstrapNodes(svcCtx.Config.BootstrapNodes)
 	return c, nil
 }
@@ -345,7 +346,11 @@ func (c *Crawler) onAnnouncePeerRequest(req *dht.AnnouncePeerRequest, addr *net.
 
 // 存在误伤
 func (c *Crawler) checkInfoHashExist(infoHash []byte) bool {
-	e := c.bloomFilter.Test(infoHash)
+	e, err := c.bloomFilter.Exists(infoHash)
+	if err != nil {
+		logx.Errorf("Failed to read bloom filter, fallback to check %v", err)
+		e = false
+	}
 	if !e {
 		res, err := c.svcCtx.OceanRpc.IfInfoHashExists(context.TODO(), &oceanclient.IfInfoHashExistsRequest{
 			InfoHash: infoHash,
@@ -355,7 +360,10 @@ func (c *Crawler) checkInfoHashExist(infoHash []byte) bool {
 			return false
 		}
 		if res.Exists {
-			c.bloomFilter.Add(infoHash)
+			err = c.bloomFilter.Add(infoHash)
+			if err != nil {
+				logx.Errorf("Failed to update bloom filter. %v", err)
+			}
 		}
 		return res.Exists
 	}
@@ -373,7 +381,7 @@ func (c *Crawler) handleTorrent(torrent *bittorrent.Torrent) {
 	for _, file := range torrent.Files {
 		req.Files = append(req.Files, &ocean.File{
 			Length:   file.Length,
-			Path:     file.Path,
+			Paths:    file.Path,
 			FileHash: file.FileHash,
 		})
 	}

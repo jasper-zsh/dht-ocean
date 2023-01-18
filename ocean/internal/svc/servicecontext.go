@@ -10,6 +10,7 @@ import (
 type ServiceContext struct {
 	Config            config.Config
 	TorrentCollection *mgm.Collection
+	Indexer           *Indexer
 }
 
 func NewServiceContext(c config.Config) *ServiceContext {
@@ -18,8 +19,10 @@ func NewServiceContext(c config.Config) *ServiceContext {
 		logrus.Errorf("Failed to init MongoDB %v", err)
 		panic(err)
 	}
-	return &ServiceContext{
+	svcCtx := &ServiceContext{
 		Config:            c,
 		TorrentCollection: mgm.Coll(&model.Torrent{}),
 	}
+	svcCtx.Indexer = NewIndexer(svcCtx)
+	return svcCtx
 }

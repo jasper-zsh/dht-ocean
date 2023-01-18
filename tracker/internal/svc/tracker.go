@@ -55,11 +55,15 @@ func (u *TrackerUpdater) refreshTracker() {
 		logrus.Warnf("Failed to scrape %d torrents from tracker. %v", len(hashes), err)
 		return
 	}
+	reqs := make([]*oceanclient.UpdateTrackerRequest, 0, len(scrapes))
 	for i, r := range scrapes {
-		_, err := u.svcCtx.OceanRpc.UpdateTracker(context.Background(), &oceanclient.UpdateTrackerRequest{
+		reqs = append(reqs, &oceanclient.UpdateTrackerRequest{
 			InfoHash: records[i].InfoHash,
 			Seeders:  r.Seeders,
 			Leechers: r.Leechers,
+		})
+		_, err := u.svcCtx.OceanRpc.BatchUpdateTracker(context.Background(), &oceanclient.BatchUpdateTrackerRequest{
+			Requests: reqs,
 		})
 		if err != nil {
 			logx.Errorf("Failed to update tracker for %s", records[i].InfoHash)

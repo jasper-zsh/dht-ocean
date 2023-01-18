@@ -14,7 +14,7 @@ message IfInfoHashExistsResponse {
 
 message File {
   int64 length = 1;
-  repeated string path = 2;
+  repeated string paths = 2;
   bytes file_hash = 3;
 }
 
@@ -24,7 +24,6 @@ message CommitTorrentRequest {
   string publisher = 3;
   string source = 4;
   repeated File files = 5;
-  string raw = 6;
 }
 
 message CommitTorrentResponse {}
@@ -49,9 +48,16 @@ message UpdateTrackerRequest {
 
 message UpdateTrackerResponse {}
 
+message BatchUpdateTrackerRequest {
+  repeated UpdateTrackerRequest requests = 1;
+}
+
+message BatchUpdateTrackerResponse {}
+
 service Ocean {
   rpc IfInfoHashExists(IfInfoHashExistsRequest) returns (IfInfoHashExistsResponse);
   rpc CommitTorrent(CommitTorrentRequest) returns (CommitTorrentResponse);
   rpc ListTorrentInfoForTracker(ListTorrentInfoForTrackerRequest) returns (ListTorrentInfoForTrackerResponse);
   rpc UpdateTracker(UpdateTrackerRequest) returns (UpdateTrackerResponse);
+  rpc BatchUpdateTracker(BatchUpdateTrackerRequest) returns (BatchUpdateTrackerResponse);
 }
