@@ -1,0 +1,7 @@
+Name: ocean.rpc
+ListenOn: ":6666"
+Etcd:
+  Hosts:
+  - 127.0.0.1:2379
+  Key: ocean.rpc
+Mongo: mongodb://127.0.0.1:27017

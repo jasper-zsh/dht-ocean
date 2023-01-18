@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+package ocean;
+option go_package="./ocean";
+
+
+message IfInfoHashExistsRequest {
+  bytes info_hash = 1;
+}
+
+message IfInfoHashExistsResponse {
+  bool exists = 1;
+}
+
+message File {
+  int64 length = 1;
+  repeated string path = 2;
+  bytes file_hash = 3;
+}
+
+message CommitTorrentRequest {
+  bytes info_hash = 1;
+  string name = 2;
+  string publisher = 3;
+  string source = 4;
+  repeated File files = 5;
+  string raw = 6;
+}
+
+message CommitTorrentResponse {}
+
+service Ocean {
+  rpc IfInfoHashExists(IfInfoHashExistsRequest) returns (IfInfoHashExistsResponse);
+  rpc CommitTorrent(CommitTorrentRequest) returns (CommitTorrentResponse);
+}

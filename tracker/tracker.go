@@ -1,7 +1,7 @@
 package tracker
 
 import (
-	"dht-ocean/bittorrent/tracker"
+	"dht-ocean/common/bittorrent/tracker"
 	"dht-ocean/model"
 	"dht-ocean/storage"
 	"encoding/hex"

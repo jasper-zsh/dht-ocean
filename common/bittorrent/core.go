@@ -3,8 +3,8 @@ package bittorrent
 import (
 	"bytes"
 	"crypto/sha1"
-	"dht-ocean/bencode"
-	"dht-ocean/dht"
+	bencode2 "dht-ocean/common/bencode"
+	"dht-ocean/common/dht"
 	"encoding/binary"
 	"fmt"
 	"github.com/pkg/errors"
@@ -92,7 +92,7 @@ func (bt *BitTorrent) read(data []byte) (int, error) {
 	return io.ReadFull(bt.conn, data)
 }
 
-func (bt *BitTorrent) GetTorrent() (*Torrent, error) {
+func (bt *BitTorrent) GetMetadata() (map[string]any, error) {
 	err := bt.handshake()
 	if err != nil {
 		return nil, errors.WithStack(err)
@@ -115,11 +115,11 @@ func (bt *BitTorrent) GetTorrent() (*Torrent, error) {
 	if !bytes.Equal(bt.infoHash, hash) {
 		return nil, fmt.Errorf("corrupt torrent")
 	}
-	metadata, _, err := bencode.BDecodeDict(rawMetadata)
+	metadata, _, err := bencode2.BDecodeDict(rawMetadata)
 	if err != nil {
 		return nil, err
 	}
-	return NewTorrentFromMetadata(bt.infoHash, metadata), nil
+	return metadata, nil
 }
 
 func (bt *BitTorrent) handshake() error {
@@ -162,7 +162,7 @@ func (bt *BitTorrent) handshake() error {
 }
 
 func (bt *BitTorrent) extHandshake() (*ExtHandshakeResult, error) {
-	p, err := bencode.BEncode(map[string]any{
+	p, err := bencode2.BEncode(map[string]any{
 		"m": map[string]any{
 			"ut_metadata": 1,
 		},
@@ -182,13 +182,13 @@ func (bt *BitTorrent) extHandshake() (*ExtHandshakeResult, error) {
 	if msg[0] != 0 {
 		return nil, fmt.Errorf("protocol error: should be ext handshake not %d", msg[0])
 	}
-	ext, _, err := bencode.BDecodeDict(msg[1:])
+	ext, _, err := bencode2.BDecodeDict(msg[1:])
 	if err != nil {
 		logrus.Debugf("failed to decode ext metadata")
 		return nil, errors.WithStack(err)
 	}
-	metadataSize, ok1 := bencode.GetInt(ext, "metadata_size")
-	utMetadata, ok2 := bencode.GetInt(ext, "m.ut_metadata")
+	metadataSize, ok1 := bencode2.GetInt(ext, "metadata_size")
+	utMetadata, ok2 := bencode2.GetInt(ext, "m.ut_metadata")
 	if !ok1 || !ok2 || metadataSize > maxMetadataSize {
 		return nil, fmt.Errorf("protocol error: illegal format")
 	}
@@ -218,7 +218,7 @@ func (bt *BitTorrent) requestPieces(ext *ExtHandshakeResult) ([]*Piece, error) {
 }
 
 func (bt *BitTorrent) requestPiece(ext *ExtHandshakeResult, piece int) error {
-	p, err := bencode.BEncode(map[string]any{
+	p, err := bencode2.BEncode(map[string]any{
 		"msg_type": 0,
 		"piece":    piece,
 	})
@@ -241,20 +241,20 @@ func (bt *BitTorrent) readPiece() (*Piece, error) {
 	if msg[0] == 0 {
 		return nil, fmt.Errorf("protocol error: should not be ext handshake")
 	}
-	dict, pos, err := bencode.BDecodeDict(msg[1:])
+	dict, pos, err := bencode2.BDecodeDict(msg[1:])
 	if err != nil {
 		logrus.Debugf("failed to decode piece")
 		return nil, errors.WithStack(err)
 	}
 	trailer := msg[pos+1:]
-	msgType, _ := bencode.GetInt(dict, "msg_type")
+	msgType, _ := bencode2.GetInt(dict, "msg_type")
 	if msgType != 1 {
 		return nil, fmt.Errorf("protocol error: wrong msg_type")
 	}
 	if len(trailer) > pieceLength {
 		return nil, fmt.Errorf("protocol error: piece too long")
 	}
-	id, _ := bencode.GetInt(dict, "piece")
+	id, _ := bencode2.GetInt(dict, "piece")
 	return &Piece{
 		Data: trailer,
 		ID:   id,

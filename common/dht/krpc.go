@@ -1,9 +1,10 @@
 package dht
 
 import (
-	"dht-ocean/bencode"
+	bencode2 "dht-ocean/common/bencode"
 	"fmt"
 	"net"
+	"strings"
 )
 
 type Packet struct {
@@ -34,7 +35,7 @@ func NewPacketFromBuffer(buf []byte) *Packet {
 }
 
 func (p *Packet) Decode() error {
-	dict, err := bencode.BDecode(p.buf)
+	dict, err := bencode2.BDecode(p.buf)
 	if err != nil {
 		return err
 	}
@@ -48,7 +49,7 @@ func (p *Packet) Decode() error {
 }
 
 func (p *Packet) Encode() (string, error) {
-	return bencode.BEncode(p.Data)
+	return bencode2.BEncode(p.Data)
 }
 
 func (p *Packet) SetT(tid []byte) {
@@ -106,33 +107,37 @@ func (p *Packet) Get(key string) interface{} {
 	return t
 }
 
-func printAny(item interface{}, prefix string) {
+func printAny(item interface{}, prefix string) string {
+	str := &strings.Builder{}
 	switch item.(type) {
 	case string:
-		fmt.Printf("%X\n", item)
+		str.WriteString(fmt.Sprintf("%X\n", item))
 	case map[string]any:
-		fmt.Print("{\n")
-		printMap(item.(map[string]any), prefix+"  ")
-		fmt.Printf("%s}\n", prefix)
+		str.WriteString(fmt.Sprintf("{\n"))
+		str.WriteString(printMap(item.(map[string]any), prefix+"  "))
+		str.WriteString(fmt.Sprintf("%s}\n", prefix))
 	case []any:
-		fmt.Print("[\n")
+		str.WriteString(fmt.Sprint("[\n"))
 		for _, e := range item.([]interface{}) {
-			printAny(e, prefix+"  ")
+			str.WriteString(printAny(e, prefix+"  "))
 		}
 	case int:
-		fmt.Printf("%d\n", item)
+		str.WriteString(fmt.Sprintf("%d\n", item))
 	default:
-		fmt.Printf("%s\n", item)
+		str.WriteString(fmt.Sprintf("%s\n", item))
 	}
+	return str.String()
 }
 
-func printMap(m map[string]any, prefix string) {
+func printMap(m map[string]any, prefix string) string {
+	str := &strings.Builder{}
 	for k, v := range m {
-		fmt.Printf("%s%s: ", prefix, k)
-		printAny(v, prefix+"  ")
+		str.WriteString(fmt.Sprintf("%s%s: ", prefix, k))
+		str.WriteString(printAny(v, prefix+"  "))
 	}
+	return str.String()
 }
 
-func (p *Packet) Print() {
-	printMap(p.Data, "")
+func (p *Packet) String() string {
+	return printMap(p.Data, "")
 }

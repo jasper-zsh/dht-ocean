@@ -1,6 +1,8 @@
 package dht
 
-import "dht-ocean/bencode"
+import (
+	"dht-ocean/common/bencode"
+)
 
 type GetPeersRequest struct {
 	*Packet

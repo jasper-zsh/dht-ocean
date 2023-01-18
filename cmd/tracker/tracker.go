@@ -1,7 +1,7 @@
 package main
 
 import (
-	"dht-ocean/bittorrent/tracker"
+	"dht-ocean/common/bittorrent/tracker"
 	"dht-ocean/config"
 	"dht-ocean/dao"
 	"dht-ocean/storage"
