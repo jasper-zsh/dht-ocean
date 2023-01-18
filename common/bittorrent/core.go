@@ -92,8 +92,13 @@ func (bt *BitTorrent) read(data []byte) (int, error) {
 	return io.ReadFull(bt.conn, data)
 }
 
-func (bt *BitTorrent) GetMetadata() (map[string]any, error) {
-	err := bt.handshake()
+func (bt *BitTorrent) GetMetadata() (metadata map[string]any, err error) {
+	defer func() {
+		if e := recover(); e != nil {
+			err = fmt.Errorf("panic %v", err)
+		}
+	}()
+	err = bt.handshake()
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
@@ -115,7 +120,7 @@ func (bt *BitTorrent) GetMetadata() (map[string]any, error) {
 	if !bytes.Equal(bt.infoHash, hash) {
 		return nil, fmt.Errorf("corrupt torrent")
 	}
-	metadata, _, err := bencode2.BDecodeDict(rawMetadata)
+	metadata, _, err = bencode2.BDecodeDict(rawMetadata)
 	if err != nil {
 		return nil, err
 	}

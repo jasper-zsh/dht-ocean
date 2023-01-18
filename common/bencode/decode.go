@@ -84,6 +84,9 @@ func decodeBytes(buf []byte, pos int) ([]byte, int, error) {
 	if l >= len(buf) {
 		return nil, 0, fmt.Errorf("illegal str len")
 	}
+	if i+l+1 > len(buf) {
+		return nil, 0, fmt.Errorf("str len overflow")
+	}
 	return buf[i+1 : i+l+1], i + l + 1, nil
 }
 
