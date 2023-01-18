@@ -13,15 +13,19 @@ import (
 )
 
 type (
-	CommitTorrentRequest     = ocean.CommitTorrentRequest
-	CommitTorrentResponse    = ocean.CommitTorrentResponse
-	File                     = ocean.File
-	IfInfoHashExistsRequest  = ocean.IfInfoHashExistsRequest
-	IfInfoHashExistsResponse = ocean.IfInfoHashExistsResponse
+	CommitTorrentRequest              = ocean.CommitTorrentRequest
+	CommitTorrentResponse             = ocean.CommitTorrentResponse
+	File                              = ocean.File
+	IfInfoHashExistsRequest           = ocean.IfInfoHashExistsRequest
+	IfInfoHashExistsResponse          = ocean.IfInfoHashExistsResponse
+	ListTorrentInfoForTrackerRequest  = ocean.ListTorrentInfoForTrackerRequest
+	ListTorrentInfoForTrackerResponse = ocean.ListTorrentInfoForTrackerResponse
+	Torrent                           = ocean.Torrent
 
 	Ocean interface {
 		IfInfoHashExists(ctx context.Context, in *IfInfoHashExistsRequest, opts ...grpc.CallOption) (*IfInfoHashExistsResponse, error)
 		CommitTorrent(ctx context.Context, in *CommitTorrentRequest, opts ...grpc.CallOption) (*CommitTorrentResponse, error)
+		ListTorrentInfoForTracker(ctx context.Context, in *ListTorrentInfoForTrackerRequest, opts ...grpc.CallOption) (*ListTorrentInfoForTrackerResponse, error)
 	}
 
 	defaultOcean struct {
@@ -43,4 +47,9 @@ func (m *defaultOcean) IfInfoHashExists(ctx context.Context, in *IfInfoHashExist
 func (m *defaultOcean) CommitTorrent(ctx context.Context, in *CommitTorrentRequest, opts ...grpc.CallOption) (*CommitTorrentResponse, error) {
 	client := ocean.NewOceanClient(m.cli.Conn())
 	return client.CommitTorrent(ctx, in, opts...)
+}
+
+func (m *defaultOcean) ListTorrentInfoForTracker(ctx context.Context, in *ListTorrentInfoForTrackerRequest, opts ...grpc.CallOption) (*ListTorrentInfoForTrackerResponse, error) {
+	client := ocean.NewOceanClient(m.cli.Conn())
+	return client.ListTorrentInfoForTracker(ctx, in, opts...)
 }

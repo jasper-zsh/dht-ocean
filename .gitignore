@@ -4,3 +4,4 @@ config.yaml
 transfer.yaml
 /crawler/etc/crawler.yaml
 /ocean/etc/ocean.yaml
+/tracker/etc/tracker.yaml

@@ -29,7 +29,29 @@ message CommitTorrentRequest {
 
 message CommitTorrentResponse {}
 
+message ListTorrentInfoForTrackerRequest {
+  int64 size = 1;
+}
+
+message Torrent {
+  string info_hash = 1;
+}
+
+message ListTorrentInfoForTrackerResponse {
+  repeated Torrent torrent_infos = 1;
+}
+
+message UpdateTrackerRequest {
+  string info_hash = 1;
+  uint32 seeders = 2;
+  uint32 leechers = 3;
+}
+
+message UpdateTrackerResponse {}
+
 service Ocean {
   rpc IfInfoHashExists(IfInfoHashExistsRequest) returns (IfInfoHashExistsResponse);
   rpc CommitTorrent(CommitTorrentRequest) returns (CommitTorrentResponse);
+  rpc ListTorrentInfoForTracker(ListTorrentInfoForTrackerRequest) returns (ListTorrentInfoForTrackerResponse);
+  rpc UpdateTracker(UpdateTrackerRequest) returns (UpdateTrackerResponse);
 }

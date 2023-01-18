@@ -24,6 +24,8 @@ const _ = grpc.SupportPackageIsVersion7
 type OceanClient interface {
 	IfInfoHashExists(ctx context.Context, in *IfInfoHashExistsRequest, opts ...grpc.CallOption) (*IfInfoHashExistsResponse, error)
 	CommitTorrent(ctx context.Context, in *CommitTorrentRequest, opts ...grpc.CallOption) (*CommitTorrentResponse, error)
+	ListTorrentInfoForTracker(ctx context.Context, in *ListTorrentInfoForTrackerRequest, opts ...grpc.CallOption) (*ListTorrentInfoForTrackerResponse, error)
+	UpdateTracker(ctx context.Context, in *UpdateTrackerRequest, opts ...grpc.CallOption) (*UpdateTrackerResponse, error)
 }
 
 type oceanClient struct {
@@ -52,12 +54,32 @@ func (c *oceanClient) CommitTorrent(ctx context.Context, in *CommitTorrentReques
 	return out, nil
 }
 
+func (c *oceanClient) ListTorrentInfoForTracker(ctx context.Context, in *ListTorrentInfoForTrackerRequest, opts ...grpc.CallOption) (*ListTorrentInfoForTrackerResponse, error) {
+	out := new(ListTorrentInfoForTrackerResponse)
+	err := c.cc.Invoke(ctx, "/ocean.Ocean/ListTorrentInfoForTracker", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *oceanClient) UpdateTracker(ctx context.Context, in *UpdateTrackerRequest, opts ...grpc.CallOption) (*UpdateTrackerResponse, error) {
+	out := new(UpdateTrackerResponse)
+	err := c.cc.Invoke(ctx, "/ocean.Ocean/UpdateTracker", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // OceanServer is the server API for Ocean service.
 // All implementations must embed UnimplementedOceanServer
 // for forward compatibility
 type OceanServer interface {
 	IfInfoHashExists(context.Context, *IfInfoHashExistsRequest) (*IfInfoHashExistsResponse, error)
 	CommitTorrent(context.Context, *CommitTorrentRequest) (*CommitTorrentResponse, error)
+	ListTorrentInfoForTracker(context.Context, *ListTorrentInfoForTrackerRequest) (*ListTorrentInfoForTrackerResponse, error)
+	UpdateTracker(context.Context, *UpdateTrackerRequest) (*UpdateTrackerResponse, error)
 	mustEmbedUnimplementedOceanServer()
 }
 
@@ -70,6 +92,12 @@ func (UnimplementedOceanServer) IfInfoHashExists(context.Context, *IfInfoHashExi
 }
 func (UnimplementedOceanServer) CommitTorrent(context.Context, *CommitTorrentRequest) (*CommitTorrentResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CommitTorrent not implemented")
+}
+func (UnimplementedOceanServer) ListTorrentInfoForTracker(context.Context, *ListTorrentInfoForTrackerRequest) (*ListTorrentInfoForTrackerResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListTorrentInfoForTracker not implemented")
+}
+func (UnimplementedOceanServer) UpdateTracker(context.Context, *UpdateTrackerRequest) (*UpdateTrackerResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateTracker not implemented")
 }
 func (UnimplementedOceanServer) mustEmbedUnimplementedOceanServer() {}
 
@@ -120,6 +148,42 @@ func _Ocean_CommitTorrent_Handler(srv interface{}, ctx context.Context, dec func
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Ocean_ListTorrentInfoForTracker_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListTorrentInfoForTrackerRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OceanServer).ListTorrentInfoForTracker(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/ocean.Ocean/ListTorrentInfoForTracker",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OceanServer).ListTorrentInfoForTracker(ctx, req.(*ListTorrentInfoForTrackerRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Ocean_UpdateTracker_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateTrackerRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OceanServer).UpdateTracker(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/ocean.Ocean/UpdateTracker",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OceanServer).UpdateTracker(ctx, req.(*UpdateTrackerRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Ocean_ServiceDesc is the grpc.ServiceDesc for Ocean service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -134,6 +198,14 @@ var Ocean_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CommitTorrent",
 			Handler:    _Ocean_CommitTorrent_Handler,
+		},
+		{
+			MethodName: "ListTorrentInfoForTracker",
+			Handler:    _Ocean_ListTorrentInfoForTracker_Handler,
+		},
+		{
+			MethodName: "UpdateTracker",
+			Handler:    _Ocean_UpdateTracker_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

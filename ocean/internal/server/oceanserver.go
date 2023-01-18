@@ -31,3 +31,13 @@ func (s *OceanServer) CommitTorrent(ctx context.Context, in *ocean.CommitTorrent
 	l := logic.NewCommitTorrentLogic(ctx, s.svcCtx)
 	return l.CommitTorrent(in)
 }
+
+func (s *OceanServer) ListTorrentInfoForTracker(ctx context.Context, in *ocean.ListTorrentInfoForTrackerRequest) (*ocean.ListTorrentInfoForTrackerResponse, error) {
+	l := logic.NewListTorrentInfoForTrackerLogic(ctx, s.svcCtx)
+	return l.ListTorrentInfoForTracker(in)
+}
+
+func (s *OceanServer) UpdateTracker(ctx context.Context, in *ocean.UpdateTrackerRequest) (*ocean.UpdateTrackerResponse, error) {
+	l := logic.NewUpdateTrackerLogic(ctx, s.svcCtx)
+	return l.UpdateTracker(in)
+}

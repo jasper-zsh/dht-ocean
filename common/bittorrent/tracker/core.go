@@ -8,6 +8,6 @@ type ScrapeResponse struct {
 
 type Tracker interface {
 	Scrape(infoHashes [][]byte) ([]*ScrapeResponse, error)
-	Start() error
-	Stop() error
+	Start()
+	Stop()
 }

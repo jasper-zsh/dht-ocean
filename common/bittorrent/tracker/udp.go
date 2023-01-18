@@ -34,28 +34,26 @@ func NewUDPTracker(addr string) (*UDPTracker, error) {
 	return t, nil
 }
 
-func (t *UDPTracker) Start() error {
+func (t *UDPTracker) Start() {
 	c, err := net.DialUDP("udp", nil, t.addr)
 	if err != nil {
-		return err
+		panic(err)
 	}
 	t.conn = c
 	err = t.connect()
 	if err != nil {
-		return err
+		panic(err)
 	}
-	return nil
 }
 
-func (t *UDPTracker) Stop() error {
+func (t *UDPTracker) Stop() {
 	if t.conn != nil {
 		err := t.conn.Close()
 		if err != nil {
-			return err
+			panic(err)
 		}
 		t.conn = nil
 	}
-	return nil
 }
 
 func (t *UDPTracker) connect() error {
