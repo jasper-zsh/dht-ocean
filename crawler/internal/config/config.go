@@ -8,7 +8,8 @@ import (
 type Config struct {
 	Ocean          zrpc.RpcClientConf
 	Redis          redis.RedisConf
-	DHTListen      string
+	DHTListen      string `json:",default=:6881"`
 	BootstrapNodes []string
-	MaxQueueSize   int
+	MaxQueueSize   int    `json:",default=3000"`
+	NodeID         string `json:",optional"`
 }

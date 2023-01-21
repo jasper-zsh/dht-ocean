@@ -8,13 +8,13 @@ import (
 	"dht-ocean/common/dht"
 	"dht-ocean/ocean/ocean"
 	"dht-ocean/ocean/oceanclient"
+	"encoding/hex"
 	"fmt"
 	"github.com/mitchellh/mapstructure"
 	"github.com/zeromicro/go-zero/core/bloom"
 	"github.com/zeromicro/go-zero/core/logx"
 	"github.com/zeromicro/go-zero/core/threading"
 	"net"
-	"os"
 	"reflect"
 	"strings"
 	"sync"
@@ -47,14 +47,17 @@ func InjectCrawler(svcCtx *ServiceContext) {
 }
 
 func NewCrawler(svcCtx *ServiceContext) (*Crawler, error) {
-	nodeID, err := os.ReadFile("node_id")
-	if err != nil {
-		logx.Infof("Cannot read nodeID, generated randomly.")
-		nodeID = dht.GenerateNodeID()
-		err = os.WriteFile("node_id", nodeID, 0666)
+	var nodeID []byte
+	var err error
+	if len(svcCtx.Config.NodeID) > 0 {
+		nodeID, err = hex.DecodeString(svcCtx.Config.NodeID)
 		if err != nil {
-			logx.Errorf("Failed to write nodeID")
+			logx.Errorf("Failed to decode Node ID: %s %v", svcCtx.Config.NodeID, err)
+			nodeID = nil
 		}
+	} else {
+		nodeID = dht.GenerateNodeID()
+		logx.Infof("Node ID not set, generated: %s", hex.EncodeToString(nodeID))
 	}
 
 	addr, err := net.ResolveUDPAddr("udp", svcCtx.Config.DHTListen)
@@ -89,9 +92,9 @@ func (c *Crawler) SetBootstrapNodes(addrs []string) {
 		strAddr := strAddr
 		go func() {
 			defer group.Done()
-			addr, err := net.ResolveUDPAddr("udp", strAddr)
+			addr, err := net.ResolveUDPAddr("udp4", strAddr)
 			if err != nil {
-				logx.Errorf("Illegal bootstrap node address %s.", strAddr)
+				logx.Errorf("Failed to resolve bootstrap node address %s. %v", strAddr, err)
 				return
 			}
 			node := &dht.Node{
