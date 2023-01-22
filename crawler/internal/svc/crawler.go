@@ -6,6 +6,7 @@ import (
 	"dht-ocean/common/bencode"
 	"dht-ocean/common/bittorrent"
 	"dht-ocean/common/dht"
+	"dht-ocean/common/executor"
 	"dht-ocean/ocean/ocean"
 	"dht-ocean/ocean/oceanclient"
 	"encoding/hex"
@@ -13,7 +14,9 @@ import (
 	"github.com/mitchellh/mapstructure"
 	"github.com/zeromicro/go-zero/core/bloom"
 	"github.com/zeromicro/go-zero/core/logx"
+	"github.com/zeromicro/go-zero/core/metric"
 	"github.com/zeromicro/go-zero/core/threading"
+	"golang.org/x/time/rate"
 	"net"
 	"reflect"
 	"strings"
@@ -21,20 +24,32 @@ import (
 	"time"
 )
 
+const (
+	metricsNamespace = "dht_ocean"
+	metricsSubsystem = "crawler"
+)
+
 type InfoHashFilter func(infoHash []byte) bool
 
 type Crawler struct {
-	addr           *net.UDPAddr
-	conn           *net.UDPConn
-	nodeID         []byte
-	bootstrapNodes []*dht.Node
-	nodes          []*dht.Node
-	ticker         *time.Ticker
-	tm             *dht.TransactionManager
-	packetBuffers  chan *dht.Packet
-	maxQueueSize   int
-	svcCtx         *ServiceContext
-	bloomFilter    *bloom.Filter
+	ctx                     context.Context
+	cancel                  context.CancelFunc
+	addr                    *net.UDPAddr
+	conn                    *net.UDPConn
+	nodeID                  []byte
+	bootstrapNodes          []*dht.Node
+	neighbours              chan *dht.Node
+	findNodeLimiter         *rate.Limiter
+	ticker                  *time.Ticker
+	tm                      *dht.TransactionManager
+	packetBuffers           chan *dht.Packet
+	maxQueueSize            int
+	svcCtx                  *ServiceContext
+	bloomFilter             *bloom.Filter
+	executor                *executor.Executor[*bittorrent.BitTorrent]
+	metricDHTSendCounter    metric.CounterVec
+	metricDHTReceiveCounter metric.CounterVec
+	metricQueueSize         metric.GaugeVec
 }
 
 func InjectCrawler(svcCtx *ServiceContext) {
@@ -73,10 +88,31 @@ func NewCrawler(svcCtx *ServiceContext) (*Crawler, error) {
 		packetBuffers: make(chan *dht.Packet, 1000),
 		maxQueueSize:  svcCtx.Config.MaxQueueSize,
 		svcCtx:        svcCtx,
+		neighbours:    make(chan *dht.Node, svcCtx.Config.MaxQueueSize),
 	}
 	redis := c.svcCtx.Config.Redis.NewRedis()
 	c.bloomFilter = bloom.New(redis, "torrent_bloom", 1024*1024*5)
 	c.SetBootstrapNodes(svcCtx.Config.BootstrapNodes)
+	c.ctx, c.cancel = context.WithCancel(context.Background())
+	c.executor = executor.NewExecutor(c.ctx, svcCtx.Config.TorrentWorkers, svcCtx.Config.TorrentMaxQueueSize, c.pullTorrent)
+	c.metricDHTSendCounter = metric.NewCounterVec(&metric.CounterVecOpts{
+		Namespace: metricsNamespace,
+		Subsystem: metricsSubsystem,
+		Name:      "dht_send",
+		Labels:    []string{"type"},
+	})
+	c.metricDHTReceiveCounter = metric.NewCounterVec(&metric.CounterVecOpts{
+		Namespace: metricsNamespace,
+		Subsystem: metricsSubsystem,
+		Name:      "dht_receive",
+		Labels:    []string{"type"},
+	})
+	c.metricQueueSize = metric.NewGaugeVec(&metric.GaugeVecOpts{
+		Namespace: metricsNamespace,
+		Subsystem: metricsSubsystem,
+		Name:      "neighbours_queue_size",
+	})
+	c.findNodeLimiter = rate.NewLimiter(rate.Limit(c.svcCtx.Config.FindNodeRateLimit), c.svcCtx.Config.FindNodeRateLimit)
 	return c, nil
 }
 
@@ -108,6 +144,23 @@ func (c *Crawler) SetBootstrapNodes(addrs []string) {
 	c.bootstrapNodes = nodes
 }
 
+func (c *Crawler) bootstrap() {
+	for {
+		select {
+		case <-c.ctx.Done():
+			return
+		case <-c.ticker.C:
+			c.metricQueueSize.Set(float64(len(c.neighbours)))
+			if len(c.neighbours) == 0 {
+				logx.Infof("Running out of neighbours, sending %d bootstrap nodes", len(c.bootstrapNodes))
+				for _, node := range c.bootstrapNodes {
+					c.neighbours <- node
+				}
+			}
+		}
+	}
+}
+
 func (c *Crawler) Start() {
 	conn, err := net.ListenUDP("udp", c.addr)
 	if err != nil {
@@ -120,14 +173,9 @@ func (c *Crawler) Start() {
 	routineGroup := threading.NewRoutineGroup()
 	routineGroup.RunSafe(c.listen)
 	routineGroup.RunSafe(c.handleMessage)
-	routineGroup.RunSafe(func() {
-		for {
-			select {
-			case <-c.ticker.C:
-				c.loop()
-			}
-		}
-	})
+	routineGroup.RunSafe(c.makeNeighbours)
+	routineGroup.RunSafe(c.bootstrap)
+	routineGroup.RunSafe(c.executor.Start)
 	routineGroup.Wait()
 }
 
@@ -138,33 +186,44 @@ func (c *Crawler) Stop() {
 	if c.ticker != nil {
 		c.ticker.Stop()
 	}
+	c.executor.Stop()
+	c.cancel()
 }
 
 func (c *Crawler) listen() {
 	buf := make([]byte, 65536)
 	for {
-		transfered, addr, err := c.conn.ReadFromUDP(buf)
-		if err != nil {
-			continue
+		select {
+		case <-c.ctx.Done():
+			return
+		default:
+			transfered, addr, err := c.conn.ReadFromUDP(buf)
+			if err != nil {
+				continue
+			}
+			logx.Debugf("Read %d bytes from udp %s", transfered, addr)
+			msg := make([]byte, transfered)
+			copy(msg, buf)
+			pkt := dht.NewPacketFromBuffer(msg)
+			pkt.Addr = addr
+			c.packetBuffers <- pkt
 		}
-		logx.Debugf("Read %d bytes from udp %s", transfered, addr)
-		msg := make([]byte, transfered)
-		copy(msg, buf)
-		pkt := dht.NewPacketFromBuffer(msg)
-		pkt.Addr = addr
-		c.packetBuffers <- pkt
 	}
 }
 
 func (c *Crawler) handleMessage() {
 	for {
-		pkt := <-c.packetBuffers
-		err := pkt.Decode()
-		if err != nil {
-			logx.Debugf("Failed to parse DHT packet. %s %v", pkt, err)
-			continue
+		select {
+		case <-c.ctx.Done():
+			return
+		case pkt := <-c.packetBuffers:
+			err := pkt.Decode()
+			if err != nil {
+				logx.Debugf("Failed to parse DHT packet. %s %v", pkt, err)
+				continue
+			}
+			c.onMessage(pkt, pkt.Addr)
 		}
-		c.onMessage(pkt, pkt.Addr)
 	}
 }
 
@@ -184,17 +243,15 @@ func (c *Crawler) sendPacket(pkt *dht.Packet, addr *net.UDPAddr) error {
 }
 
 func (c *Crawler) makeNeighbours() {
-	cnt := 0
-	c.nodes = append(c.nodes, c.bootstrapNodes...)
-	for _, node := range c.nodes {
-		// AlphaReign
-		c.sendFindNode(dht.GetNeighbourID(node.NodeID, c.nodeID), dht.GenerateNodeID(), node.Addr)
-		// Official
-		// c.sendFindNode(c.nodeID, dht.GenerateNodeID(), node.Addr)
-		cnt += 1
+	for {
+		select {
+		case <-c.ctx.Done():
+			return
+		case node := <-c.neighbours:
+			_ = c.findNodeLimiter.Wait(c.ctx)
+			c.sendFindNode(dht.GetNeighbourID(node.NodeID, c.nodeID), dht.GenerateNodeID(), node.Addr)
+		}
 	}
-	logx.Debugf("Sending %d find_node queries.", cnt)
-	c.nodes = c.nodes[:0]
 }
 
 func (c *Crawler) sendFindNode(nodeID []byte, target []byte, addr *net.UDPAddr) {
@@ -202,17 +259,14 @@ func (c *Crawler) sendFindNode(nodeID []byte, target []byte, addr *net.UDPAddr) 
 	req := dht.NewFindNodeRequest(nodeID, target)
 	req.SetT(c.tm.NextTransactionID())
 	_ = c.sendPacket(req.Packet, addr)
+	c.metricDHTSendCounter.Inc("find_node")
 }
 
 func (c *Crawler) sendPing(addr *net.UDPAddr) {
 	req := dht.NewPingRequest(c.nodeID)
 	req.SetT(c.tm.NextTransactionID())
 	_ = c.sendPacket(req.Packet, addr)
-}
-
-func (c *Crawler) loop() {
-	c.LogStats()
-	c.makeNeighbours()
+	c.metricDHTSendCounter.Inc("ping")
 }
 
 func (c *Crawler) onMessage(packet *dht.Packet, addr *net.UDPAddr) {
@@ -244,6 +298,7 @@ func (c *Crawler) onMessage(packet *dht.Packet, addr *net.UDPAddr) {
 		if errs != nil {
 			logx.Debugf("DHT error response: %s", errs)
 		}
+		c.metricDHTReceiveCounter.Inc("error")
 	default:
 		logx.Debugf("Drop illegal packet with no type: %s", packet)
 		return
@@ -251,20 +306,22 @@ func (c *Crawler) onMessage(packet *dht.Packet, addr *net.UDPAddr) {
 }
 
 func (c *Crawler) onFindNodeResponse(nodes []*dht.Node) {
+	c.metricDHTReceiveCounter.Inc("find_node")
 	for _, node := range nodes {
-		if c.maxQueueSize > 0 && len(c.nodes) > c.maxQueueSize {
+		if c.maxQueueSize > 0 && len(c.neighbours) >= c.maxQueueSize {
 			return
 		}
 		if !node.Addr.IP.IsUnspecified() &&
 			!bytes.Equal(c.nodeID, node.NodeID) &&
 			node.Addr.Port < 65536 &&
 			node.Addr.Port > 0 {
-			c.nodes = append(c.nodes, node)
+			c.neighbours <- node
 		}
 	}
 }
 
 func (c *Crawler) onGetPeersRequest(req *dht.GetPeersRequest, addr *net.UDPAddr) {
+	c.metricDHTReceiveCounter.Inc("get_peers")
 	tid := req.GetT()
 	if tid == nil {
 		logx.Debugf("Drop request with no tid. %s", req)
@@ -285,6 +342,7 @@ func (c *Crawler) onGetPeersRequest(req *dht.GetPeersRequest, addr *net.UDPAddr)
 }
 
 func (c *Crawler) onAnnouncePeerRequest(req *dht.AnnouncePeerRequest, addr *net.UDPAddr) {
+	c.metricDHTReceiveCounter.Inc("announce_peer")
 	tid := req.GetT()
 	// AlphaReign
 	res := dht.NewEmptyResponsePacket(dht.GetNeighbourID(req.NodeID(), c.nodeID))
@@ -294,57 +352,63 @@ func (c *Crawler) onAnnouncePeerRequest(req *dht.AnnouncePeerRequest, addr *net.
 	_ = c.sendPacket(res, addr)
 	logx.Debugf("Got announce peer %x %s", req.InfoHash(), req.Name())
 
-	go func() {
-		if c.checkInfoHashExist(req.InfoHash()) {
-			return
-		}
-		var a string
-		if req.ImpliedPort() == 0 {
-			a = fmt.Sprintf("%s:%d", addr.IP, req.Port())
-		} else {
-			a = addr.String()
-		}
-		bt := bittorrent.NewBitTorrent(c.nodeID, req.InfoHash(), a)
-		err := bt.Start()
-		if err != nil {
-			logx.Debugf("Failed to connect to peer to fetch metadata from %s %v", addr, err)
-			return
-		}
-		defer bt.Stop()
-		metadata, err := bt.GetMetadata()
-		if err != nil {
-			logx.Debugf("Failed to fetch metadata from %s %+v", addr, err)
-			return
-		}
-		torrent := &bittorrent.Torrent{
-			InfoHash: req.InfoHash(),
-		}
-		decoder, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{
-			WeaklyTypedInput: true,
-			Result:           torrent,
-			DecodeHook: func(src reflect.Kind, target reflect.Kind, from interface{}) (interface{}, error) {
-				if target == reflect.String {
-					switch v := from.(type) {
-					case []byte:
-						return strings.ToValidUTF8(string(v), ""), nil
-					case string:
-						return strings.ToValidUTF8(v, ""), nil
-					}
+	var a string
+	if req.ImpliedPort() == 0 {
+		a = fmt.Sprintf("%s:%d", addr.IP, req.Port())
+	} else {
+		a = addr.String()
+	}
+	bt := bittorrent.NewBitTorrent(c.nodeID, req.InfoHash(), a)
+	if c.executor.QueueSize() >= c.svcCtx.Config.TorrentMaxQueueSize {
+		logx.Infof("Pull torrent task queue full, drop %s", hex.EncodeToString(req.InfoHash()))
+	} else {
+		c.executor.Commit(bt)
+	}
+}
 
+func (c *Crawler) pullTorrent(bt *bittorrent.BitTorrent) {
+	if c.checkInfoHashExist(bt.InfoHash) {
+		return
+	}
+	err := bt.Start()
+	if err != nil {
+		logx.Debugf("Failed to connect to peer to fetch metadata from %s %v", bt.Addr, err)
+		return
+	}
+	defer bt.Stop()
+	metadata, err := bt.GetMetadata()
+	if err != nil {
+		logx.Debugf("Failed to fetch metadata from %s %+v", bt.Addr, err)
+		return
+	}
+	torrent := &bittorrent.Torrent{
+		InfoHash: bt.InfoHash,
+	}
+	decoder, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{
+		WeaklyTypedInput: true,
+		Result:           torrent,
+		DecodeHook: func(src reflect.Kind, target reflect.Kind, from interface{}) (interface{}, error) {
+			if target == reflect.String {
+				switch v := from.(type) {
+				case []byte:
+					return strings.ToValidUTF8(string(v), ""), nil
+				case string:
+					return strings.ToValidUTF8(v, ""), nil
 				}
-				return from, nil
-			},
-		})
-		err = decoder.Decode(metadata)
-		if err != nil {
-			logx.Errorf("Failed to decode metadata %v %v", metadata, err)
-			return
-		}
-		logx.Debugf("Got torrent %s with %d files", torrent.Name, len(torrent.Files))
-		if len(torrent.Name) > 0 {
-			go c.handleTorrent(torrent)
-		}
-	}()
+
+			}
+			return from, nil
+		},
+	})
+	err = decoder.Decode(metadata)
+	if err != nil {
+		logx.Errorf("Failed to decode metadata %v %v", metadata, err)
+		return
+	}
+	logx.Debugf("Got torrent %s with %d files", torrent.Name, len(torrent.Files))
+	if len(torrent.Name) > 0 {
+		c.handleTorrent(torrent)
+	}
 }
 
 // 存在误伤
@@ -396,5 +460,5 @@ func (c *Crawler) handleTorrent(torrent *bittorrent.Torrent) {
 }
 
 func (c *Crawler) LogStats() {
-	logx.Infof("Node queue size: %d", len(c.nodes))
+	logx.Infof("Node queue size: %d", len(c.neighbours))
 }

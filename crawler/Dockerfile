@@ -16,7 +16,7 @@ COPY crawler/etc /app/etc
 RUN go build -ldflags="-s -w" -o /app/crawler crawler/crawler.go
 
 
-FROM alpine
+FROM --platform=linux/amd64 alpine
 
 RUN apk update --no-cache && apk add --no-cache ca-certificates tzdata
 

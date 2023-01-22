@@ -19,6 +19,7 @@ func main() {
 
 	var c config2.Config
 	conf.MustLoad(*configFile, &c)
+	c.SetUp()
 	ctx := svc.NewServiceContext(c)
 
 	group := service.NewServiceGroup()

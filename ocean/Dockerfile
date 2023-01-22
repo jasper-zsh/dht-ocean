@@ -16,7 +16,7 @@ COPY ocean/etc /app/etc
 RUN go build -ldflags="-s -w" -o /app/ocean ocean/ocean.go
 
 
-FROM alpine
+FROM --platform=linux/amd64 alpine
 
 RUN apk update --no-cache && apk add --no-cache ca-certificates tzdata
 

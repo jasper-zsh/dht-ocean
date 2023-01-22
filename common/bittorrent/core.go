@@ -36,23 +36,23 @@ type Piece struct {
 }
 
 type BitTorrent struct {
-	addr     string
+	Addr     string
 	conn     net.Conn
-	infoHash []byte
+	InfoHash []byte
 	nodeID   []byte
 }
 
 func NewBitTorrent(nodeID, infoHash []byte, addr string) *BitTorrent {
 	r := &BitTorrent{
-		addr:     addr,
-		infoHash: infoHash,
+		Addr:     addr,
+		InfoHash: infoHash,
 		nodeID:   nodeID,
 	}
 	return r
 }
 
 func (bt *BitTorrent) Start() error {
-	conn, err := net.DialTimeout("tcp", bt.addr, time.Second*10)
+	conn, err := net.DialTimeout("tcp", bt.Addr, time.Second*10)
 	if err != nil {
 		return errors.WithStack(err)
 	}
@@ -117,7 +117,7 @@ func (bt *BitTorrent) GetMetadata() (metadata map[string]any, err error) {
 	h := sha1.New()
 	h.Write(rawMetadata)
 	hash := h.Sum(nil)
-	if !bytes.Equal(bt.infoHash, hash) {
+	if !bytes.Equal(bt.InfoHash, hash) {
 		return nil, fmt.Errorf("corrupt torrent")
 	}
 	metadata, _, err = bencode2.BDecodeDict(rawMetadata)
@@ -132,7 +132,7 @@ func (bt *BitTorrent) handshake() error {
 	pkt[0] = byte(len(btProtocol))
 	pkt = append(pkt, btProtocol...)
 	pkt = append(pkt, btReserved...)
-	pkt = append(pkt, bt.infoHash...)
+	pkt = append(pkt, bt.InfoHash...)
 	// AlphaReign
 	pkt = append(pkt, dht.GenerateNodeID()...)
 	// Official
