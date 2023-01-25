@@ -41,19 +41,16 @@ pipeline {
             }
           }
           println "Find services to build: ${buildDocker}"
-          buildTasks = [:]
           deployTasks = [:]
           buildDocker.each() {
             def dockerfile = "${it}/Dockerfile"
             def tag = "${env.REGISTRY}/${env.NAMESPACE}/${it}:${env.GIT_COMMIT}"
             println "Built task for ${dockerfile} as ${tag}"
-            buildTasks["Build ${it}"] = {
-              stage("Build and push ${it}") {
-                container("kaniko") {
-                  sh """
-                  /kaniko/executor -c `pwd` -f `pwd`/${dockerfile} -d ${tag}
-                  """
-                }
+            stage("Build and push ${it}") {
+              container("kaniko") {
+                sh """
+                /kaniko/executor -c `pwd` -f `pwd`/${dockerfile} -d ${tag}
+                """
               }
             }
             def k8sFile = "${it}/k8s.yaml"
@@ -85,7 +82,6 @@ pipeline {
               }
             }
           }
-          parallel buildTasks
           parallel deployTasks
         }
       }
