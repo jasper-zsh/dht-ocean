@@ -3,6 +3,7 @@ pipeline {
 
   environment {
     REGISTRY = "docker.flightdeck.tech"
+    NAMESPACE = "${JOB_NAME}"
   }
 
   stages {
@@ -44,7 +45,7 @@ pipeline {
           deployTasks = [:]
           buildDocker.each() {
             def dockerfile = "${it}/Dockerfile"
-            def tag = "${env.REGISTRY}/${env.JOB_NAME}/${it}:${env.GIT_COMMIT}"
+            def tag = "${env.REGISTRY}/${env.NAMESPACE}/${it}:${env.GIT_COMMIT}"
             println "Built task for ${dockerfile} as ${tag}"
             buildTasks["Build ${it}"] = {
               stage("Build and push ${it}") {
@@ -60,22 +61,26 @@ pipeline {
             if (k8sFound) {
               deployTasks["Deploy ${it}"] = {
                 stage("Deploy ${it}") {
-                  contentReplace(
-                    configs: [
-                      fileContentReplaceConfig(
-                        configs: [
-                          fileContentReplaceItemConfig(
-                            search: '#{IMAGE}',
-                            replace: '${tag}',
-                            matchCount: 1,
-                          )
-                        ],
-                        fileEncoding: 'UTF-8',
-                        filePath: k8sFile
-                      )
-                    ]
-                  )
-                  kubernetesApply(file: k8sFile, environment: "${env.JOB_NAME}")
+                  container("kubectl") {
+                    contentReplace(
+                      configs: [
+                        fileContentReplaceConfig(
+                          configs: [
+                            fileContentReplaceItemConfig(
+                              search: '(\\#\\{IMAGE\\})',
+                              replace: "${tag}",
+                              matchCount: 1,
+                            )
+                          ],
+                          fileEncoding: 'UTF-8',
+                          filePath: k8sFile
+                        )
+                      ]
+                    )
+                    withKubeConfig(namespace: "${env.NAMESPACE}") {
+                      sh "kubectl apply -f ${k8sFile}"
+                    }
+                  }
                 }
               }
             }
