@@ -33,6 +33,7 @@ func (l *CommitTorrentLogic) CommitTorrent(in *ocean.CommitTorrentRequest) (*oce
 	if err != nil {
 		return nil, err
 	}
+	l.svcCtx.MetricOceanEvent.Inc("torrent_upsert")
 
 	return &ocean.CommitTorrentResponse{}, nil
 }

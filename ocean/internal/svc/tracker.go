@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-func UpdateTracker(ctx context.Context, in *ocean.UpdateTrackerRequest) error {
+func UpdateTracker(ctx context.Context, svcCtx *ServiceContext, in *ocean.UpdateTrackerRequest) error {
 	now := time.Now()
 	coll := mgm.Coll(&model.Torrent{})
 	_, err := coll.UpdateByID(ctx, in.InfoHash, bson.M{
@@ -28,17 +28,18 @@ func UpdateTracker(ctx context.Context, in *ocean.UpdateTrackerRequest) error {
 		logx.Errorf("Failed to update tracker for %s", in.InfoHash)
 		return err
 	}
+	svcCtx.MetricOceanEvent.Inc("tracker_updated")
 	return nil
 }
 
-func BatchUpdateTracker(ctx context.Context, reqs []*ocean.UpdateTrackerRequest) {
+func BatchUpdateTracker(ctx context.Context, svcCtx *ServiceContext, reqs []*ocean.UpdateTrackerRequest) {
 	group := sync.WaitGroup{}
 	for _, req := range reqs {
 		group.Add(1)
 		req := req
 		go func() {
 			defer group.Done()
-			_ = UpdateTracker(ctx, req)
+			_ = UpdateTracker(ctx, svcCtx, req)
 		}()
 	}
 	group.Wait()

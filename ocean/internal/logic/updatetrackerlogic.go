@@ -23,7 +23,7 @@ func NewUpdateTrackerLogic(ctx context.Context, svcCtx *svc.ServiceContext) *Upd
 }
 
 func (l *UpdateTrackerLogic) UpdateTracker(in *ocean.UpdateTrackerRequest) (*ocean.UpdateTrackerResponse, error) {
-	err := svc.UpdateTracker(l.ctx, in)
+	err := svc.UpdateTracker(l.ctx, l.svcCtx, in)
 	if err != nil {
 		return nil, err
 	}

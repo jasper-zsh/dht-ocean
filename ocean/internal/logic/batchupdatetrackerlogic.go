@@ -24,7 +24,7 @@ func NewBatchUpdateTrackerLogic(ctx context.Context, svcCtx *svc.ServiceContext)
 }
 
 func (l *BatchUpdateTrackerLogic) BatchUpdateTracker(in *ocean.BatchUpdateTrackerRequest) (*ocean.BatchUpdateTrackerResponse, error) {
-	svc.BatchUpdateTracker(l.ctx, in.Requests)
+	svc.BatchUpdateTracker(l.ctx, l.svcCtx, in.Requests)
 
 	return &ocean.BatchUpdateTrackerResponse{}, nil
 }

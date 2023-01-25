@@ -79,6 +79,9 @@ func main() {
 		}
 	}))
 	group.Add(svcCtx.Indexer)
+
+	stats := svc.NewStats(svcCtx)
+	group.Add(stats)
 	defer group.Stop()
 
 	fmt.Printf("Starting rpc server at %s...\n", c.ListenOn)

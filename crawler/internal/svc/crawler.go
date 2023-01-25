@@ -49,6 +49,7 @@ type Crawler struct {
 	executor                *executor.Executor[*bittorrent.BitTorrent]
 	metricDHTSendCounter    metric.CounterVec
 	metricDHTReceiveCounter metric.CounterVec
+	metricCrawlerEvent      metric.CounterVec
 	metricQueueSize         metric.GaugeVec
 }
 
@@ -111,6 +112,12 @@ func NewCrawler(svcCtx *ServiceContext) (*Crawler, error) {
 		Namespace: metricsNamespace,
 		Subsystem: metricsSubsystem,
 		Name:      "neighbours_queue_size",
+	})
+	c.metricCrawlerEvent = metric.NewCounterVec(&metric.CounterVecOpts{
+		Namespace: metricsNamespace,
+		Subsystem: metricsSubsystem,
+		Name:      "crawler_event",
+		Labels:    []string{"event"},
 	})
 	c.findNodeLimiter = rate.NewLimiter(rate.Limit(c.svcCtx.Config.FindNodeRateLimit), c.svcCtx.Config.FindNodeRateLimit)
 	return c, nil
@@ -360,7 +367,8 @@ func (c *Crawler) onAnnouncePeerRequest(req *dht.AnnouncePeerRequest, addr *net.
 	}
 	bt := bittorrent.NewBitTorrent(c.nodeID, req.InfoHash(), a)
 	if c.executor.QueueSize() >= c.svcCtx.Config.TorrentMaxQueueSize {
-		logx.Infof("Pull torrent task queue full, drop %s", hex.EncodeToString(req.InfoHash()))
+		c.metricCrawlerEvent.Inc("drop_torrent")
+		logx.Debugf("Pull torrent task queue full, drop %s", hex.EncodeToString(req.InfoHash()))
 	} else {
 		c.executor.Commit(bt)
 	}
@@ -370,6 +378,7 @@ func (c *Crawler) pullTorrent(bt *bittorrent.BitTorrent) {
 	if c.checkInfoHashExist(bt.InfoHash) {
 		return
 	}
+	c.metricCrawlerEvent.Inc("pull_torrent")
 	err := bt.Start()
 	if err != nil {
 		logx.Debugf("Failed to connect to peer to fetch metadata from %s %v", bt.Addr, err)
@@ -418,7 +427,7 @@ func (c *Crawler) checkInfoHashExist(infoHash []byte) bool {
 		logx.Errorf("Failed to read bloom filter, fallback to check %v", err)
 		e = false
 	}
-	if !e {
+	if e {
 		res, err := c.svcCtx.OceanRpc.IfInfoHashExists(context.TODO(), &oceanclient.IfInfoHashExistsRequest{
 			InfoHash: infoHash,
 		})
@@ -433,8 +442,9 @@ func (c *Crawler) checkInfoHashExist(infoHash []byte) bool {
 			}
 		}
 		return res.Exists
+	} else {
+		return e
 	}
-	return true
 }
 
 func (c *Crawler) handleTorrent(torrent *bittorrent.Torrent) {
@@ -456,6 +466,10 @@ func (c *Crawler) handleTorrent(torrent *bittorrent.Torrent) {
 	if err != nil {
 		logx.Errorf("Failed to commit torrent %s %s. %v", torrent.InfoHash, torrent.Name, err)
 		return
+	}
+	err = c.bloomFilter.Add(req.InfoHash)
+	if err != nil {
+		logx.Errorf("Failed to add bloom filter. %v", err)
 	}
 }
 
