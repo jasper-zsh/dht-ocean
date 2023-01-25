@@ -1,0 +1,52 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: crawler-deployment
+  namespace: dht-ocean
+  labels:
+    app: crawler
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: crawler
+  template:
+    metadata:
+      labels:
+        app: crawler
+    spec:
+      strategy:
+        type: Recreate
+      nodeSelector:
+        region: jp
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      containers:
+        - name: crawler
+          image: #{IMAGE}
+          ports:
+            - containerPort: 6881
+              name: dht
+            - containerPort: 9101
+              name: metrics
+          volumeMounts:
+            - name: config
+              mountPath: /app/etc
+      volumes:
+        - name: config
+          configMap:
+            name: crawler
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: crawler
+  namespace: dht-ocean
+  labels:
+    prom: home
+spec:
+  selector:
+    matchLabels:
+      app: crawler
+  podMetricsEndpoints:
+    - port: metrics

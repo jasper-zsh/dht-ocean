@@ -1,8 +1,17 @@
 pipeline {
   agent any
 
+  environment {
+    REGISTRY = "docker.flightdeck.tech"
+  }
+
   stages {
-    stage("last-changes") {
+    stage("Find services to build docker image") {
+      agent {
+        kubernetes {
+          inheritFrom "kaniko"
+        }
+      }
       steps {
         script {
           def publisher = LastChanges.getLastChangesPublisher "LAST_SUCCESSFUL_BUILD", "SIDE", "LINE", true, true, "", "", "", "", ""
@@ -10,45 +19,69 @@ pipeline {
           def changes = publisher.getLastChanges()
           def pattern = /diff --([\w]+) a\/(.*?) b\/(.*?)\n/
           def c = changes.getDiff()
-          dockers = [
-            "crawler": "docker.flightdeck.tech/dht-ocean/crawler",
-            "ocean": "docker.flightdeck.tech/dht-ocean/ocean",
-            "tracker": "docker.flightdeck.tech/dht-ocean/tracker"
-          ]
-          buildDocker = [] as Set<String>
+          def files = findFiles(glob: "*/Dockerfile")
+          def services = []
+          files.each {
+            println "Found Dockerfile: ${it}"
+            def parts = it.path.split("/")
+            services.add(parts[0])
+          }
+          def buildDocker = [] as Set<String>
           c.eachMatch(pattern) { m ->
             def filename = m[2]
             def parts = filename.split("/")
             if (parts[0] == "common") {
-              dockers.each { k, v ->
-                buildDocker.add(k)
+              println "Common changed, build all services: ${services}"
+              services.each {
+                buildDocker.add(it)
               }
-            } else if (dockers.containsKey(parts[0])) {
+            } else if (services.contains(parts[0])) {
               buildDocker.add(parts[0])
             }
           }
-        }
-      }
-    }
-    stage("Build and push docker images") {
-      steps {
-        script {
-          def tasks = [:]
+          println "Find services to build: ${buildDocker}"
+          buildTasks = [:]
+          deployTasks = [:]
           buildDocker.each() {
-            tasks["${it}"] = {
-              stage("Build ${it}") {
-                agent {
-                  kubernetes {
-                    inheritFrom 'docker'
-                  }
+            def dockerfile = "${it}/Dockerfile"
+            def tag = "${env.REGISTRY}/${env.JOB_NAME}/${it}:${env.GIT_COMMIT}"
+            println "Built task for ${dockerfile} as ${tag}"
+            buildTasks["Build ${it}"] = {
+              stage("Build and push ${it}") {
+                container("kaniko") {
+                  sh """
+                  /kaniko/executor -c `pwd` -f `pwd`/${dockerfile} -d ${tag}
+                  """
                 }
-                def label = dockers[it]
-                app = docker.build("${label}:latest", "${it}")
-                app.push()
+              }
+            }
+            def k8sFile = "${it}/k8s.yaml"
+            def k8sFound = findFiles(glob: k8sFile).length > 0
+            if (k8sFound) {
+              deployTasks["Deploy ${it}"] = {
+                stage("Deploy ${it}") {
+                  contentReplace(
+                    configs: [
+                      fileContentReplaceConfig(
+                        configs: [
+                          fileContentReplaceItemConfig(
+                            search: '#{IMAGE}',
+                            replace: '${tag}',
+                            matchCount: 1,
+                          )
+                        ],
+                        fileEncoding: 'UTF-8',
+                        filePath: k8sFile
+                      )
+                    ]
+                  )
+                  kubernetesApply(file: k8sFile, environment: "${env.JOB_NAME}")
+                }
               }
             }
           }
-          parallel tasks
+          parallel buildTasks
+          parallel deployTasks
         }
       }
     }
