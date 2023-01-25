@@ -10,20 +10,38 @@ pipeline {
           def changes = publisher.getLastChanges()
           def pattern = /diff --([\w]+) a\/(.*?) b\/(.*?)\n/
           def c = changes.getDiff()
-          def dockers = ["crawler", "ocean", "tracker"]
+          def dockers = [
+            "crawler": "docker.flightdeck.tech/dht-ocean/crawler",
+            "ocean": "docker.flightdeck.tech/dht-ocean/ocean",
+            "tracker": "docker.flightdeck.tech/dht-ocean/tracker"
+          ]
           def buildDocker = [] as Set<String>
           c.eachMatch(pattern) { m ->
             def filename = m[2]
             def parts = filename.split("/")
             if (parts[0] == "common") {
-              dockers.each() {
-                buildDocker.add(it)
+              dockers.each { k, v ->
+                buildDocker.add(k)
               }
-            } else if (dockers.contains(parts[0])) {
+            } else if (dockers.containsKey(parts[0])) {
               buildDocker.add(parts[0])
             }
           }
-          println buildDocker
+          def tasks = [:]
+          buildDocker.each() {
+            tasks["${it}"] = {
+              node {
+                stage("Build ${it}") {
+                  def label = dockers[it]
+                  app = docker.build("${label}:latest", "${it}")
+                }
+                stage("Push ${it}") {
+                  app.push()
+                }
+              }
+            }
+          }
+          parallel tasks
         }
       }
     }
