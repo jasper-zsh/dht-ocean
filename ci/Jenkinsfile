@@ -15,7 +15,7 @@ pipeline {
             "ocean": "docker.flightdeck.tech/dht-ocean/ocean",
             "tracker": "docker.flightdeck.tech/dht-ocean/tracker"
           ]
-          def buildDocker = [] as Set<String>
+          buildDocker = [] as Set<String>
           c.eachMatch(pattern) { m ->
             def filename = m[2]
             def parts = filename.split("/")
@@ -27,6 +27,12 @@ pipeline {
               buildDocker.add(parts[0])
             }
           }
+        }
+      }
+    }
+    stage("Build services") {
+      steps {
+        script {
           def tasks = [:]
           buildDocker.each() {
             tasks["${it}"] = {
