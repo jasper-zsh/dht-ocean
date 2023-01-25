@@ -2,7 +2,6 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: crawler-deployment
-  namespace: dht-ocean
   labels:
     app: crawler
 spec:
@@ -41,7 +40,6 @@ apiVersion: monitoring.coreos.com/v1
 kind: PodMonitor
 metadata:
   name: crawler
-  namespace: dht-ocean
   labels:
     prom: home
 spec:
