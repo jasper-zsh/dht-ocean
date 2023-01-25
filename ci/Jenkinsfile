@@ -10,7 +10,7 @@ pipeline {
           def changes = publisher.getLastChanges()
           def pattern = /diff --([\w]+) a\/(.*?) b\/(.*?)\n/
           def c = changes.getDiff()
-          def dockers = [
+          dockers = [
             "crawler": "docker.flightdeck.tech/dht-ocean/crawler",
             "ocean": "docker.flightdeck.tech/dht-ocean/ocean",
             "tracker": "docker.flightdeck.tech/dht-ocean/tracker"
@@ -30,21 +30,21 @@ pipeline {
         }
       }
     }
-    stage("Build services") {
-      agent {
-        docker { image 'docker:stable' }
-      }
+    stage("Build and push docker images") {
       steps {
         script {
           def tasks = [:]
           buildDocker.each() {
             tasks["${it}"] = {
-              stage("Build and push ${it}") {
-                steps {
-                  def label = dockers[it]
-                  app = docker.build("${label}:latest", "${it}")
-                  app.push()
+              stage("Build ${it}") {
+                agent {
+                  kubernetes {
+                    inheritFrom 'docker'
+                  }
                 }
+                def label = dockers[it]
+                app = docker.build("${label}:latest", "${it}")
+                app.push()
               }
             }
           }
