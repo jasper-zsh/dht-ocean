@@ -31,20 +31,18 @@ pipeline {
       }
     }
     stage("Build services") {
+      agent {
+        docker { image 'docker:stable' }
+      }
       steps {
         script {
           def tasks = [:]
           buildDocker.each() {
             tasks["${it}"] = {
               stage("Build and push ${it}") {
-                agent {
-                  docker { image 'docker:stable' }
-                }
                 steps {
                   def label = dockers[it]
                   app = docker.build("${label}:latest", "${it}")
-                }
-                steps {
                   app.push()
                 }
               }
