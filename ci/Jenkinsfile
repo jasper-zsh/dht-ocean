@@ -8,9 +8,8 @@ pipeline {
           def publisher = LastChanges.getLastChangesPublisher "LAST_SUCCESSFUL_BUILD", "SIDE", "LINE", true, true, "", "", "", "", ""
           publisher.publishLastChanges()
           def changes = publisher.getLastChanges()
-          c = changes.getEscapedDiff()
           def pattern = /^diff --([\w]+) a\/(.*?) b\/(.*?)$/
-          m = c =~ pattern
+          def m = changes.getEscapedDiff() =~ pattern
           (0..<m.count).each {
             println m[it][0]
           }
