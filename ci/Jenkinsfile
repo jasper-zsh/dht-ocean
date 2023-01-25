@@ -31,6 +31,9 @@ pipeline {
           buildDocker.each() {
             tasks["${it}"] = {
               node {
+                agent {
+                  docker { image 'docker:stable' }
+                }
                 stage("Build ${it}") {
                   def label = dockers[it]
                   app = docker.build("${label}:latest", "${it}")
