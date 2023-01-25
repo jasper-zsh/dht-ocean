@@ -8,11 +8,22 @@ pipeline {
           def publisher = LastChanges.getLastChangesPublisher "LAST_SUCCESSFUL_BUILD", "SIDE", "LINE", true, true, "", "", "", "", ""
           publisher.publishLastChanges()
           def changes = publisher.getLastChanges()
-          def pattern = /^diff --([\w]+) a\/(.*?) b\/(.*?)$/
-          def m = changes.getEscapedDiff() =~ pattern
-          (0..<m.count).each {
-            println m[it][0]
+          def pattern = /diff --([\w]+) a\/(.*?) b\/(.*?)\n/
+          def c = changes.getDiff()
+          def dockers = ["crawler", "ocean", "tracker"]
+          def buildDocker = [] as Set<String>
+          c.eachMatch(pattern) { m ->
+            def filename = m[2]
+            def parts = filename.split("/")
+            if (parts[0] == "common") {
+              dockers.each() {
+                buildDocker.add(it)
+              }
+            } else if (dockers.contains(parts[0])) {
+              buildDocker.add(parts[0])
+            }
           }
+          println buildDocker
         }
       }
     }

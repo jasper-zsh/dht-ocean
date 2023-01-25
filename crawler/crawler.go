@@ -6,7 +6,6 @@ import (
 	"flag"
 	"github.com/sirupsen/logrus"
 	"github.com/zeromicro/go-zero/core/conf"
-	"github.com/zeromicro/go-zero/core/logx"
 	"github.com/zeromicro/go-zero/core/service"
 	_ "net/http/pprof"
 )
@@ -14,7 +13,6 @@ import (
 var configFile = flag.String("f", "etc/crawler.yaml", "the config file")
 
 func main() {
-	logx.SetLevel(logx.InfoLevel)
 	flag.Parse()
 
 	var c config2.Config
