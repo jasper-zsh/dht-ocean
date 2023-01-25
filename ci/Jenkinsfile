@@ -30,15 +30,15 @@ pipeline {
           def tasks = [:]
           buildDocker.each() {
             tasks["${it}"] = {
-              node {
+              stage("Build and push ${it}") {
                 agent {
                   docker { image 'docker:stable' }
                 }
-                stage("Build ${it}") {
+                steps {
                   def label = dockers[it]
                   app = docker.build("${label}:latest", "${it}")
                 }
-                stage("Push ${it}") {
+                steps {
                   app.push()
                 }
               }
