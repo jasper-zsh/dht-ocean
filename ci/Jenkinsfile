@@ -49,7 +49,10 @@ pipeline {
             stage("Build and push ${it}") {
               container("kaniko") {
                 sh """
-                /kaniko/executor -c `pwd` -f `pwd`/${dockerfile} -d ${tag}
+                /kaniko/executor --cache=true \
+                  --context `pwd` \
+                  --dockerfile `pwd`/${dockerfile} \
+                  --destination ${tag}
                 """
               }
             }

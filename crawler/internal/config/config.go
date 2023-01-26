@@ -1,16 +1,16 @@
 package config
 
 import (
-	"github.com/zeromicro/go-zero/core/prometheus"
+	"github.com/zeromicro/go-zero/core/service"
 	"github.com/zeromicro/go-zero/core/stores/redis"
 	"github.com/zeromicro/go-zero/zrpc"
 )
 
 type Config struct {
+	service.ServiceConf
 	Ocean               zrpc.RpcClientConf
 	Redis               redis.RedisConf
-	Prometheus          prometheus.Config `json:",optional"`
-	DHTListen           string            `json:",default=:6881"`
+	DHTListen           string `json:",default=:6881"`
 	BootstrapNodes      []string
 	FindNodeRateLimit   int    `json:",default=3000"`
 	MaxQueueSize        int    `json:",default=3000"`
@@ -19,6 +19,6 @@ type Config struct {
 	TorrentMaxQueueSize int    `json:",default=1000"`
 }
 
-func (c *Config) SetUp() {
-	prometheus.StartAgent(c.Prometheus)
+func (c *Config) MustSetUp() {
+	c.ServiceConf.MustSetUp()
 }
