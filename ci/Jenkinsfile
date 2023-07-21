@@ -2,7 +2,6 @@ pipeline {
   agent any
 
   environment {
-    REGISTRY = "docker.flightdeck.tech"
     NAMESPACE = "${JOB_NAME}"
   }
 
@@ -44,7 +43,7 @@ pipeline {
           deployTasks = [:]
           buildDocker.each() {
             def dockerfile = "${it}/Dockerfile"
-            def tag = "${env.REGISTRY}/${env.NAMESPACE}/${it}:${env.GIT_COMMIT}"
+            def tag = "${env.DOCKER_REGISTRY}/${env.NAMESPACE}/${it}:${env.GIT_COMMIT}"
             println "Built task for ${dockerfile} as ${tag}"
             stage("Build and push ${it}") {
               container("kaniko") {

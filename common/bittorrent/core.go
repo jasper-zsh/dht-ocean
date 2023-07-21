@@ -7,12 +7,13 @@ import (
 	"dht-ocean/common/dht"
 	"encoding/binary"
 	"fmt"
-	"github.com/pkg/errors"
-	"github.com/sirupsen/logrus"
 	"io"
 	"math"
 	"net"
 	"time"
+
+	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 )
 
 var (
@@ -23,6 +24,8 @@ var (
 	extHandshakeID  byte = 0
 	btMsgID         byte = 20
 )
+
+type TrafficMetricFunc func(label string, length int)
 
 type ExtHandshakeResult struct {
 	MetadataSize int
@@ -36,10 +39,11 @@ type Piece struct {
 }
 
 type BitTorrent struct {
-	Addr     string
-	conn     net.Conn
-	InfoHash []byte
-	nodeID   []byte
+	Addr              string
+	conn              net.Conn
+	InfoHash          []byte
+	nodeID            []byte
+	trafficMetricFunc TrafficMetricFunc
 }
 
 func NewBitTorrent(nodeID, infoHash []byte, addr string) *BitTorrent {
@@ -49,6 +53,16 @@ func NewBitTorrent(nodeID, infoHash []byte, addr string) *BitTorrent {
 		nodeID:   nodeID,
 	}
 	return r
+}
+
+func (bt *BitTorrent) SetTrafficMetricFunc(f TrafficMetricFunc) {
+	bt.trafficMetricFunc = f
+}
+
+func (bt *BitTorrent) trafficMetric(label string, length int) {
+	if bt.trafficMetricFunc != nil {
+		bt.trafficMetricFunc(label, length)
+	}
 }
 
 func (bt *BitTorrent) Start() error {
@@ -75,6 +89,7 @@ func (bt *BitTorrent) sendMessage(msg []byte) error {
 	if err != nil {
 		return err
 	}
+	bt.trafficMetric("out_bt_message_header", len(lenB))
 	_, err = bt.write(msg)
 	if err != nil {
 		return err
@@ -141,6 +156,7 @@ func (bt *BitTorrent) handshake() error {
 	if err != nil {
 		return errors.WithStack(err)
 	}
+	bt.trafficMetric("out_bt_handshake", len(pkt))
 	pLength := make([]byte, 1)
 	b, err := bt.read(pLength)
 	if err != nil {
@@ -155,6 +171,7 @@ func (bt *BitTorrent) handshake() error {
 	if err != nil {
 		return errors.WithStack(err)
 	}
+	bt.trafficMetric("in_bt_handshake", len(data)+len(pLength))
 	if !bytes.Equal(data[:pLength[0]], btProtocol) {
 		return fmt.Errorf("not bt protocol")
 	}
@@ -180,10 +197,12 @@ func (bt *BitTorrent) extHandshake() (*ExtHandshakeResult, error) {
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
+	bt.trafficMetric("out_bt_ext_handshake", len(msg))
 	msg, err = bt.readExtMessage()
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
+	bt.trafficMetric("in_bt_ext_handshake", len(msg))
 	if msg[0] != 0 {
 		return nil, fmt.Errorf("protocol error: should be ext handshake not %d", msg[0])
 	}
@@ -235,6 +254,7 @@ func (bt *BitTorrent) requestPiece(ext *ExtHandshakeResult, piece int) error {
 	if err != nil {
 		return errors.WithStack(err)
 	}
+	bt.trafficMetric("out_bt_request_piece", len(msg))
 	return nil
 }
 
@@ -243,6 +263,7 @@ func (bt *BitTorrent) readPiece() (*Piece, error) {
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
+	bt.trafficMetric("in_bt_piece", len(msg))
 	if msg[0] == 0 {
 		return nil, fmt.Errorf("protocol error: should not be ext handshake")
 	}
@@ -273,6 +294,7 @@ func (bt *BitTorrent) readMessage() ([]byte, error) {
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
+	bt.trafficMetric("in_bt_message_header", len(msgLengthB))
 	msgLength = binary.BigEndian.Uint32(msgLengthB)
 	msg := make([]byte, msgLength)
 	_, err = bt.read(msg)
@@ -291,6 +313,7 @@ func (bt *BitTorrent) readExtMessage() ([]byte, error) {
 		if len(msg) == 0 {
 			continue
 		}
+		bt.trafficMetric("in_bt_ext_message_header", 1)
 		if msg[0] == btMsgID {
 			return msg[1:], nil
 		}

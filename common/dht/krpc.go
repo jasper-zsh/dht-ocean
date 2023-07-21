@@ -49,7 +49,12 @@ func (p *Packet) Decode() error {
 }
 
 func (p *Packet) Encode() (string, error) {
-	return bencode2.BEncode(p.Data)
+	ret, err := bencode2.BEncode(p.Data)
+	if err != nil {
+		return "", err
+	}
+	p.buf = []byte(ret)
+	return ret, nil
 }
 
 func (p *Packet) SetT(tid []byte) {
@@ -140,4 +145,8 @@ func printMap(m map[string]any, prefix string) string {
 
 func (p *Packet) String() string {
 	return printMap(p.Data, "")
+}
+
+func (p *Packet) Size() int {
+	return len(p.buf)
 }

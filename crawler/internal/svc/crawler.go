@@ -11,17 +11,18 @@ import (
 	"dht-ocean/ocean/oceanclient"
 	"encoding/hex"
 	"fmt"
+	"net"
+	"reflect"
+	"strings"
+	"sync"
+	"time"
+
 	"github.com/mitchellh/mapstructure"
 	"github.com/zeromicro/go-zero/core/bloom"
 	"github.com/zeromicro/go-zero/core/logx"
 	"github.com/zeromicro/go-zero/core/metric"
 	"github.com/zeromicro/go-zero/core/threading"
 	"golang.org/x/time/rate"
-	"net"
-	"reflect"
-	"strings"
-	"sync"
-	"time"
 )
 
 const (
@@ -49,6 +50,7 @@ type Crawler struct {
 	executor                *executor.Executor[*bittorrent.BitTorrent]
 	metricDHTSendCounter    metric.CounterVec
 	metricDHTReceiveCounter metric.CounterVec
+	metricTrafficCounter    metric.CounterVec
 	metricCrawlerEvent      metric.CounterVec
 	metricQueueSize         metric.GaugeVec
 }
@@ -106,6 +108,12 @@ func NewCrawler(svcCtx *ServiceContext) (*Crawler, error) {
 		Namespace: metricsNamespace,
 		Subsystem: metricsSubsystem,
 		Name:      "dht_receive",
+		Labels:    []string{"type"},
+	})
+	c.metricTrafficCounter = metric.NewCounterVec(&metric.CounterVecOpts{
+		Namespace: metricsNamespace,
+		Subsystem: metricsSubsystem,
+		Name:      "traffic",
 		Labels:    []string{"type"},
 	})
 	c.metricQueueSize = metric.NewGaugeVec(&metric.GaugeVecOpts{
@@ -267,6 +275,7 @@ func (c *Crawler) sendFindNode(nodeID []byte, target []byte, addr *net.UDPAddr) 
 	req.SetT(c.tm.NextTransactionID())
 	_ = c.sendPacket(req.Packet, addr)
 	c.metricDHTSendCounter.Inc("find_node")
+	c.metricTrafficCounter.Add(float64(req.Packet.Size()), "out_find_node")
 }
 
 func (c *Crawler) sendPing(addr *net.UDPAddr) {
@@ -274,6 +283,7 @@ func (c *Crawler) sendPing(addr *net.UDPAddr) {
 	req.SetT(c.tm.NextTransactionID())
 	_ = c.sendPacket(req.Packet, addr)
 	c.metricDHTSendCounter.Inc("ping")
+	c.metricTrafficCounter.Add(float64(req.Packet.Size()), "out_ping")
 }
 
 func (c *Crawler) onMessage(packet *dht.Packet, addr *net.UDPAddr) {
@@ -285,15 +295,18 @@ func (c *Crawler) onMessage(packet *dht.Packet, addr *net.UDPAddr) {
 				logx.Debugf("Failed to parse find_node response %s", packet)
 			}
 			c.onFindNodeResponse(res.Nodes)
+			c.metricTrafficCounter.Add(float64(packet.Size()), "in_find_node_response")
 		}
 	case "q":
 		switch packet.GetQ() {
 		case "get_peers":
 			req := dht.NewGetPeersRequestFromPacket(packet)
 			c.onGetPeersRequest(req, addr)
+			c.metricTrafficCounter.Add(float64(packet.Size()), "in_get_peers")
 		case "announce_peer":
 			req := dht.NewAnnouncePeerRequestFromPacket(packet)
 			c.onAnnouncePeerRequest(req, addr)
+			c.metricTrafficCounter.Add(float64(packet.Size()), "in_announce_peer")
 			//default:
 			//	logrus.Debugf("Drop illegal query with no query_type")
 			//	if logrus.GetLevel() == logrus.DebugLevel {
@@ -306,8 +319,10 @@ func (c *Crawler) onMessage(packet *dht.Packet, addr *net.UDPAddr) {
 			logx.Debugf("DHT error response: %s", errs)
 		}
 		c.metricDHTReceiveCounter.Inc("error")
+		c.metricTrafficCounter.Add(float64(packet.Size()), "in_error")
 	default:
 		logx.Debugf("Drop illegal packet with no type: %s", packet)
+		c.metricTrafficCounter.Add(float64(packet.Size()), "in_unknown")
 		return
 	}
 }
@@ -346,6 +361,7 @@ func (c *Crawler) onGetPeersRequest(req *dht.GetPeersRequest, addr *net.UDPAddr)
 	//res := dht.NewGetPeersResponse(c.nodeID, req.Token())
 	res.SetT(tid)
 	_ = c.sendPacket(res.Packet, addr)
+	c.metricTrafficCounter.Add(float64(res.Packet.Size()), "out_get_peers_response")
 }
 
 func (c *Crawler) onAnnouncePeerRequest(req *dht.AnnouncePeerRequest, addr *net.UDPAddr) {
@@ -357,6 +373,7 @@ func (c *Crawler) onAnnouncePeerRequest(req *dht.AnnouncePeerRequest, addr *net.
 	// res := dht.NewEmptyResponsePacket(c.nodeID)
 	res.SetT(tid)
 	_ = c.sendPacket(res, addr)
+	c.metricTrafficCounter.Add(float64(res.Size()), "out_announce_peer_response")
 	logx.Debugf("Got announce peer %x %s", req.InfoHash(), req.Name())
 
 	var a string
@@ -366,6 +383,9 @@ func (c *Crawler) onAnnouncePeerRequest(req *dht.AnnouncePeerRequest, addr *net.
 		a = addr.String()
 	}
 	bt := bittorrent.NewBitTorrent(c.nodeID, req.InfoHash(), a)
+	bt.SetTrafficMetricFunc(func(label string, length int) {
+		c.metricTrafficCounter.Add(float64(length), label)
+	})
 	if c.executor.QueueSize() >= c.svcCtx.Config.TorrentMaxQueueSize {
 		c.metricCrawlerEvent.Inc("drop_torrent")
 		logx.Debugf("Pull torrent task queue full, drop %s", hex.EncodeToString(req.InfoHash()))
