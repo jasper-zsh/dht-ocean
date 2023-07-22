@@ -7,7 +7,7 @@ import (
 	"dht-ocean/common/bittorrent"
 	"dht-ocean/common/dht"
 	"dht-ocean/common/executor"
-	"dht-ocean/crawler/internal/utils"
+	"dht-ocean/common/util"
 	"dht-ocean/ocean/ocean"
 	"dht-ocean/ocean/oceanclient"
 	"encoding/hex"
@@ -47,7 +47,7 @@ type Crawler struct {
 	packetBuffers           chan *dht.Packet
 	maxQueueSize            int
 	svcCtx                  *ServiceContext
-	bloomFilter             *utils.BloomFilter
+	bloomFilter             *util.BloomFilter
 	executor                *executor.Executor[*bittorrent.BitTorrent]
 	metricDHTSendCounter    metric.CounterVec
 	metricDHTReceiveCounter metric.CounterVec
@@ -96,13 +96,13 @@ func NewCrawler(svcCtx *ServiceContext) (*Crawler, error) {
 	}
 	_, err = os.Stat(c.svcCtx.Config.BloomFilterPath)
 	if err != nil && os.IsNotExist(err) {
-		c.bloomFilter = utils.NewBloomFilter(1024 * 1024 * 5)
+		c.bloomFilter = util.NewBloomFilter(1024 * 1024 * 5)
 	} else {
 		bloomFile, err := os.Open(c.svcCtx.Config.BloomFilterPath)
 		if err != nil {
 			return nil, err
 		}
-		c.bloomFilter, err = utils.LoadBloomFilter(bloomFile)
+		c.bloomFilter, err = util.LoadBloomFilter(bloomFile)
 		if err != nil {
 			return nil, err
 		}

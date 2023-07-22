@@ -3,8 +3,9 @@ package tracker
 import (
 	"encoding/hex"
 	"fmt"
-	"github.com/stretchr/testify/assert"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestUDPTracker_Scrape(t *testing.T) {
@@ -12,7 +13,7 @@ func TestUDPTracker_Scrape(t *testing.T) {
 	if !assert.NoError(t, err) {
 		return
 	}
-	err = tracker.Start()
+	tracker.Start()
 	if !assert.NoError(t, err) {
 		return
 	}

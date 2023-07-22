@@ -2,12 +2,14 @@ package main
 
 import (
 	"context"
+	"dht-ocean/common/util"
 	"dht-ocean/ocean/internal/model"
 	"encoding/hex"
 	"flag"
 	"fmt"
+	"os"
+
 	"github.com/kamva/mgm/v3"
-	"github.com/zeromicro/go-zero/core/bloom"
 	"github.com/zeromicro/go-zero/core/logx"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -37,8 +39,7 @@ func main() {
 
 	if *bloomFlag {
 		ctx := context.TODO()
-		redis := c.Redis.NewRedis()
-		filter := bloom.New(redis, "torrent_bloom", 1024*1024*5)
+		filter := util.NewBloomFilter(1024 * 1024 * 5)
 		coll := mgm.Coll(&model.Torrent{})
 		opts := options.Find().SetProjection(bson.M{
 			"_id": true,
@@ -55,7 +56,7 @@ func main() {
 				logx.Errorf("Failed to convert info hash %s to bytes. %v", idStr, err)
 				continue
 			}
-			err = filter.Add(idBytes)
+			filter.Add(idBytes)
 			if err != nil {
 				logx.Errorf("Failed to add info hash %s to bloom filter. %v", idStr, err)
 				continue
@@ -65,6 +66,17 @@ func main() {
 				logx.Infof("Added %d info hashes", cnt)
 			}
 		}
+		bloomFile, err := os.Create("bloom.json")
+		if err != nil {
+			logx.Errorf("Failed to create bloom filter file. %+v", err)
+			return
+		}
+		err = filter.Save(bloomFile)
+		if err != nil {
+			logx.Errorf("Failed to save bloom filter. %+v", err)
+			return
+		}
+		bloomFile.Close()
 
 		return
 	}
