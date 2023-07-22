@@ -5,6 +5,7 @@ import (
 	"io"
 	"sync"
 
+	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/spaolacci/murmur3"
 )
 
@@ -18,7 +19,7 @@ type BloomFilter struct {
 	m    uint64
 	n    uint64
 	k    uint8
-	keys []byte
+	keys *roaring64.Bitmap
 }
 
 // http://pages.cs.wisc.edu/~cao/papers/summary-cache/node8.html
@@ -26,7 +27,7 @@ func NewBloomFilter(bits uint64) *BloomFilter {
 	filter := &BloomFilter{}
 	filter.m = bits
 	filter.k = 7
-	filter.keys = make([]byte, bits)
+	filter.keys = roaring64.NewBitmap()
 	return filter
 }
 
@@ -46,15 +47,15 @@ func LoadBloomFilter(reader io.Reader) (*BloomFilter, error) {
 	if err != nil {
 		return nil, err
 	}
-	keys, err := io.ReadAll(reader)
+	filter := &BloomFilter{
+		m: binary.BigEndian.Uint64(rawM),
+		n: binary.BigEndian.Uint64(rawN),
+		k: rawK[0],
+	}
+	filter.keys = roaring64.NewBitmap()
+	_, err = filter.keys.ReadFrom(reader)
 	if err != nil {
 		return nil, err
-	}
-	filter := &BloomFilter{
-		m:    binary.BigEndian.Uint64(rawM),
-		n:    binary.BigEndian.Uint64(rawN),
-		k:    rawK[0],
-		keys: keys,
 	}
 	return filter, nil
 }
@@ -65,9 +66,7 @@ func (f *BloomFilter) Add(data []byte) {
 
 	locations := f.getLocations(data)
 	for _, loc := range locations {
-		slot := loc / bitsPerByte
-		mod := loc % bitsPerByte
-		f.keys[slot] |= 1 << mod
+		f.keys.Add(loc)
 	}
 
 	f.n++
@@ -79,9 +78,7 @@ func (f *BloomFilter) Exists(data []byte) bool {
 
 	locations := f.getLocations(data)
 	for _, loc := range locations {
-		slot := loc / bitsPerByte
-		mod := loc % bitsPerByte
-		if f.keys[slot]&(1<<mod) == 0 {
+		if !f.keys.Contains(loc) {
 			return false
 		}
 	}
@@ -101,18 +98,18 @@ func (f *BloomFilter) Save(writer io.Writer) error {
 	if err != nil {
 		return err
 	}
-	_, err = writer.Write(f.keys)
+	_, err = f.keys.WriteTo(writer)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func (f *BloomFilter) getLocations(data []byte) []uint {
-	locations := make([]uint, f.k)
-	for i := uint(0); i < uint(f.k); i++ {
+func (f *BloomFilter) getLocations(data []byte) []uint64 {
+	locations := make([]uint64, f.k)
+	for i := uint64(0); i < uint64(f.k); i++ {
 		hashValue := baseHash(append(data, byte(i)))
-		locations[i] = uint(hashValue % uint64(f.m))
+		locations[i] = hashValue % uint64(f.m)
 	}
 
 	return locations
