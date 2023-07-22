@@ -32,12 +32,12 @@ func NewBloomFilter(bits uint64) *BloomFilter {
 }
 
 func LoadBloomFilter(reader io.Reader) (*BloomFilter, error) {
-	rawM := make([]byte, 4)
+	rawM := make([]byte, 8)
 	_, err := io.ReadFull(reader, rawM)
 	if err != nil {
 		return nil, err
 	}
-	rawN := make([]byte, 4)
+	rawN := make([]byte, 8)
 	_, err = io.ReadFull(reader, rawN)
 	if err != nil {
 		return nil, err
@@ -91,8 +91,8 @@ func (f *BloomFilter) Save(writer io.Writer) error {
 	defer f.lock.Unlock()
 
 	header := make([]byte, 0)
-	binary.BigEndian.AppendUint64(header, f.m)
-	binary.BigEndian.AppendUint64(header, f.n)
+	header = binary.BigEndian.AppendUint64(header, f.m)
+	header = binary.BigEndian.AppendUint64(header, f.n)
 	header = append(header, f.k)
 	_, err := writer.Write(header)
 	if err != nil {
