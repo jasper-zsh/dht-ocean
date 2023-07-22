@@ -27,6 +27,11 @@ func (s *OceanServer) IfInfoHashExists(ctx context.Context, in *ocean.IfInfoHash
 	return l.IfInfoHashExists(in)
 }
 
+func (s *OceanServer) BatchInfoHashExist(ctx context.Context, in *ocean.BatchInfoHashExistRequest) (*ocean.BatchInfoHashExistResponse, error) {
+	l := logic.NewBatchInfoHashExistLogic(ctx, s.svcCtx)
+	return l.BatchInfoHashExist(in)
+}
+
 func (s *OceanServer) CommitTorrent(ctx context.Context, in *ocean.CommitTorrentRequest) (*ocean.CommitTorrentResponse, error) {
 	l := logic.NewCommitTorrentLogic(ctx, s.svcCtx)
 	return l.CommitTorrent(in)

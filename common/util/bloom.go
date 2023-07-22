@@ -1,7 +1,7 @@
 package util
 
 import (
-	"encoding/json"
+	"encoding/binary"
 	"io"
 	"sync"
 
@@ -10,39 +10,51 @@ import (
 
 const (
 	bitsPerByte = 8
-	mod7        = 1<<3 - 1
 )
 
 type BloomFilter struct {
 	lock sync.RWMutex `json:"-"`
 
-	payload bloomPayload
+	m    uint64
+	n    uint64
+	k    uint8
+	keys []byte
 }
 
-type bloomPayload struct {
-	M    uint64 `json:"m"`
-	N    uint64 `json:"n"`
-	K    uint   `json:"k"`
-	Keys []byte `json:"keys"`
-}
-
+// http://pages.cs.wisc.edu/~cao/papers/summary-cache/node8.html
 func NewBloomFilter(bits uint64) *BloomFilter {
 	filter := &BloomFilter{}
-	filter.payload.M = bits
-	filter.payload.K = 13
-	filter.payload.Keys = make([]byte, bits)
+	filter.m = bits
+	filter.k = 7
+	filter.keys = make([]byte, bits)
 	return filter
 }
 
 func LoadBloomFilter(reader io.Reader) (*BloomFilter, error) {
-	raw, err := io.ReadAll(reader)
+	rawM := make([]byte, 4)
+	_, err := io.ReadFull(reader, rawM)
 	if err != nil {
 		return nil, err
 	}
-	filter := &BloomFilter{}
-	err = json.Unmarshal(raw, &filter.payload)
+	rawN := make([]byte, 4)
+	_, err = io.ReadFull(reader, rawN)
 	if err != nil {
 		return nil, err
+	}
+	rawK := make([]byte, 1)
+	_, err = io.ReadFull(reader, rawK)
+	if err != nil {
+		return nil, err
+	}
+	keys, err := io.ReadAll(reader)
+	if err != nil {
+		return nil, err
+	}
+	filter := &BloomFilter{
+		m:    binary.BigEndian.Uint64(rawM),
+		n:    binary.BigEndian.Uint64(rawN),
+		k:    rawK[0],
+		keys: keys,
 	}
 	return filter, nil
 }
@@ -55,10 +67,10 @@ func (f *BloomFilter) Add(data []byte) {
 	for _, loc := range locations {
 		slot := loc / bitsPerByte
 		mod := loc % bitsPerByte
-		f.payload.Keys[slot] |= 1 << mod
+		f.keys[slot] |= 1 << mod
 	}
 
-	f.payload.N++
+	f.n++
 }
 
 func (f *BloomFilter) Exists(data []byte) bool {
@@ -69,7 +81,7 @@ func (f *BloomFilter) Exists(data []byte) bool {
 	for _, loc := range locations {
 		slot := loc / bitsPerByte
 		mod := loc % bitsPerByte
-		if f.payload.Keys[slot]&(1<<mod) == 0 {
+		if f.keys[slot]&(1<<mod) == 0 {
 			return false
 		}
 	}
@@ -78,11 +90,18 @@ func (f *BloomFilter) Exists(data []byte) bool {
 }
 
 func (f *BloomFilter) Save(writer io.Writer) error {
-	raw, err := json.Marshal(f.payload)
+	f.lock.Lock()
+	defer f.lock.Unlock()
+
+	header := make([]byte, 0)
+	binary.BigEndian.AppendUint64(header, f.m)
+	binary.BigEndian.AppendUint64(header, f.n)
+	header = append(header, f.k)
+	_, err := writer.Write(header)
 	if err != nil {
 		return err
 	}
-	_, err = writer.Write(raw)
+	_, err = writer.Write(f.keys)
 	if err != nil {
 		return err
 	}
@@ -90,10 +109,10 @@ func (f *BloomFilter) Save(writer io.Writer) error {
 }
 
 func (f *BloomFilter) getLocations(data []byte) []uint {
-	locations := make([]uint, f.payload.K)
-	for i := uint(0); i < uint(f.payload.K); i++ {
+	locations := make([]uint, f.k)
+	for i := uint(0); i < uint(f.k); i++ {
 		hashValue := baseHash(append(data, byte(i)))
-		locations[i] = uint(hashValue % uint64(f.payload.M))
+		locations[i] = uint(hashValue % uint64(f.m))
 	}
 
 	return locations

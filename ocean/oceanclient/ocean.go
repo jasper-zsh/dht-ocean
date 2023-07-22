@@ -13,6 +13,8 @@ import (
 )
 
 type (
+	BatchInfoHashExistRequest         = ocean.BatchInfoHashExistRequest
+	BatchInfoHashExistResponse        = ocean.BatchInfoHashExistResponse
 	BatchUpdateTrackerRequest         = ocean.BatchUpdateTrackerRequest
 	BatchUpdateTrackerResponse        = ocean.BatchUpdateTrackerResponse
 	CommitTorrentRequest              = ocean.CommitTorrentRequest
@@ -28,6 +30,7 @@ type (
 
 	Ocean interface {
 		IfInfoHashExists(ctx context.Context, in *IfInfoHashExistsRequest, opts ...grpc.CallOption) (*IfInfoHashExistsResponse, error)
+		BatchInfoHashExist(ctx context.Context, in *BatchInfoHashExistRequest, opts ...grpc.CallOption) (*BatchInfoHashExistResponse, error)
 		CommitTorrent(ctx context.Context, in *CommitTorrentRequest, opts ...grpc.CallOption) (*CommitTorrentResponse, error)
 		ListTorrentInfoForTracker(ctx context.Context, in *ListTorrentInfoForTrackerRequest, opts ...grpc.CallOption) (*ListTorrentInfoForTrackerResponse, error)
 		UpdateTracker(ctx context.Context, in *UpdateTrackerRequest, opts ...grpc.CallOption) (*UpdateTrackerResponse, error)
@@ -48,6 +51,11 @@ func NewOcean(cli zrpc.Client) Ocean {
 func (m *defaultOcean) IfInfoHashExists(ctx context.Context, in *IfInfoHashExistsRequest, opts ...grpc.CallOption) (*IfInfoHashExistsResponse, error) {
 	client := ocean.NewOceanClient(m.cli.Conn())
 	return client.IfInfoHashExists(ctx, in, opts...)
+}
+
+func (m *defaultOcean) BatchInfoHashExist(ctx context.Context, in *BatchInfoHashExistRequest, opts ...grpc.CallOption) (*BatchInfoHashExistResponse, error) {
+	client := ocean.NewOceanClient(m.cli.Conn())
+	return client.BatchInfoHashExist(ctx, in, opts...)
 }
 
 func (m *defaultOcean) CommitTorrent(ctx context.Context, in *CommitTorrentRequest, opts ...grpc.CallOption) (*CommitTorrentResponse, error) {

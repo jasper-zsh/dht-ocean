@@ -26,6 +26,10 @@ import (
 	"google.golang.org/grpc/reflection"
 )
 
+const (
+	targetCount = 1024 * 1024 * 100 // 100 million
+)
+
 var configFile = flag.String("f", "etc/ocean.yaml", "the config file")
 var bloomFlag = flag.Bool("bloom", false, "Build bloom filter")
 
@@ -39,7 +43,7 @@ func main() {
 
 	if *bloomFlag {
 		ctx := context.TODO()
-		filter := util.NewBloomFilter(1024 * 1024 * 5)
+		filter := util.NewBloomFilter(targetCount * 15)
 		coll := mgm.Coll(&model.Torrent{})
 		opts := options.Find().SetProjection(bson.M{
 			"_id": true,
@@ -66,7 +70,7 @@ func main() {
 				logx.Infof("Added %d info hashes", cnt)
 			}
 		}
-		bloomFile, err := os.Create("bloom.json")
+		bloomFile, err := os.Create("bloom.bin")
 		if err != nil {
 			logx.Errorf("Failed to create bloom filter file. %+v", err)
 			return

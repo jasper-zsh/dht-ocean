@@ -12,6 +12,14 @@ message IfInfoHashExistsResponse {
   bool exists = 1;
 }
 
+message BatchInfoHashExistRequest {
+  repeated bytes info_hashes = 1;
+}
+
+message BatchInfoHashExistResponse {
+  repeated bool results = 1;
+}
+
 message File {
   int64 length = 1;
   repeated string paths = 2;
@@ -56,6 +64,7 @@ message BatchUpdateTrackerResponse {}
 
 service Ocean {
   rpc IfInfoHashExists(IfInfoHashExistsRequest) returns (IfInfoHashExistsResponse);
+  rpc BatchInfoHashExist(BatchInfoHashExistRequest) returns (BatchInfoHashExistResponse);
   rpc CommitTorrent(CommitTorrentRequest) returns (CommitTorrentResponse);
   rpc ListTorrentInfoForTracker(ListTorrentInfoForTrackerRequest) returns (ListTorrentInfoForTrackerResponse);
   rpc UpdateTracker(UpdateTrackerRequest) returns (UpdateTrackerResponse);
