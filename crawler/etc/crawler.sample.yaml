@@ -16,3 +16,4 @@ FindNodeRateLimit: 3000
 TorrentWorkers: 100
 TorrentMaxQueueSize: 1000
 BloomFilterPath: bloom.bin
+ForceQuitSeconds: 20
