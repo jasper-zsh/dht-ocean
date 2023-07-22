@@ -4,10 +4,11 @@ import (
 	config2 "dht-ocean/crawler/internal/config"
 	"dht-ocean/crawler/internal/svc"
 	"flag"
+	_ "net/http/pprof"
+
 	"github.com/sirupsen/logrus"
 	"github.com/zeromicro/go-zero/core/conf"
 	"github.com/zeromicro/go-zero/core/service"
-	_ "net/http/pprof"
 )
 
 var configFile = flag.String("f", "etc/crawler.yaml", "the config file")
@@ -22,6 +23,7 @@ func main() {
 
 	group := service.NewServiceGroup()
 	group.Add(ctx.Crawler)
+	group.Add(ctx.TorrentFetcher)
 	defer group.Stop()
 
 	logrus.Infof("Starting crawler...")
