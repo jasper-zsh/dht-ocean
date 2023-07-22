@@ -17,7 +17,7 @@ spec:
         app: crawler
     spec:
       nodeSelector:
-        region: jp
+        region: us
       hostNetwork: true
       dnsPolicy: ClusterFirstWithHostNet
       containers:
@@ -31,10 +31,15 @@ spec:
           volumeMounts:
             - name: config
               mountPath: /app/etc
+            - name: data
+              mountPath: /app/data
       volumes:
         - name: config
           configMap:
             name: crawler
+        - name: data
+          persistentVolumeClaim:
+            claimName: crawler-pvc
 ---
 apiVersion: monitoring.coreos.com/v1
 kind: PodMonitor

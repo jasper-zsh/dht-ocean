@@ -7,18 +7,19 @@ import (
 	"dht-ocean/common/bittorrent"
 	"dht-ocean/common/dht"
 	"dht-ocean/common/executor"
+	"dht-ocean/crawler/internal/utils"
 	"dht-ocean/ocean/ocean"
 	"dht-ocean/ocean/oceanclient"
 	"encoding/hex"
 	"fmt"
 	"net"
+	"os"
 	"reflect"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/mitchellh/mapstructure"
-	"github.com/zeromicro/go-zero/core/bloom"
 	"github.com/zeromicro/go-zero/core/logx"
 	"github.com/zeromicro/go-zero/core/metric"
 	"github.com/zeromicro/go-zero/core/threading"
@@ -46,7 +47,7 @@ type Crawler struct {
 	packetBuffers           chan *dht.Packet
 	maxQueueSize            int
 	svcCtx                  *ServiceContext
-	bloomFilter             *bloom.Filter
+	bloomFilter             *utils.BloomFilter
 	executor                *executor.Executor[*bittorrent.BitTorrent]
 	metricDHTSendCounter    metric.CounterVec
 	metricDHTReceiveCounter metric.CounterVec
@@ -93,8 +94,23 @@ func NewCrawler(svcCtx *ServiceContext) (*Crawler, error) {
 		svcCtx:        svcCtx,
 		neighbours:    make(chan *dht.Node, svcCtx.Config.MaxQueueSize),
 	}
-	redis := c.svcCtx.Config.Redis.NewRedis()
-	c.bloomFilter = bloom.New(redis, "torrent_bloom", 1024*1024*5)
+	_, err = os.Stat(c.svcCtx.Config.BloomFilterPath)
+	if err != nil && os.IsNotExist(err) {
+		c.bloomFilter = utils.NewBloomFilter(1024 * 1024 * 5)
+	} else {
+		bloomFile, err := os.Open(c.svcCtx.Config.BloomFilterPath)
+		if err != nil {
+			return nil, err
+		}
+		c.bloomFilter, err = utils.LoadBloomFilter(bloomFile)
+		if err != nil {
+			return nil, err
+		}
+		err = bloomFile.Close()
+		if err != nil {
+			return nil, err
+		}
+	}
 	c.SetBootstrapNodes(svcCtx.Config.BootstrapNodes)
 	c.ctx, c.cancel = context.WithCancel(context.Background())
 	c.executor = executor.NewExecutor(c.ctx, svcCtx.Config.TorrentWorkers, svcCtx.Config.TorrentMaxQueueSize, c.pullTorrent)
@@ -203,6 +219,18 @@ func (c *Crawler) Stop() {
 	}
 	c.executor.Stop()
 	c.cancel()
+	bloomFile, err := os.Create(c.svcCtx.Config.BloomFilterPath)
+	if err != nil {
+		panic(err)
+	}
+	err = c.bloomFilter.Save(bloomFile)
+	if err != nil {
+		panic(err)
+	}
+	err = bloomFile.Close()
+	if err != nil {
+		panic(err)
+	}
 }
 
 func (c *Crawler) listen() {
@@ -442,11 +470,7 @@ func (c *Crawler) pullTorrent(bt *bittorrent.BitTorrent) {
 
 // 存在误伤
 func (c *Crawler) checkInfoHashExist(infoHash []byte) bool {
-	e, err := c.bloomFilter.Exists(infoHash)
-	if err != nil {
-		logx.Errorf("Failed to read bloom filter, fallback to check %v", err)
-		e = false
-	}
+	e := c.bloomFilter.Exists(infoHash)
 	if e {
 		res, err := c.svcCtx.OceanRpc.IfInfoHashExists(context.TODO(), &oceanclient.IfInfoHashExistsRequest{
 			InfoHash: infoHash,
@@ -456,10 +480,7 @@ func (c *Crawler) checkInfoHashExist(infoHash []byte) bool {
 			return false
 		}
 		if res.Exists {
-			err = c.bloomFilter.Add(infoHash)
-			if err != nil {
-				logx.Errorf("Failed to update bloom filter. %v", err)
-			}
+			c.bloomFilter.Add(infoHash)
 		}
 		return res.Exists
 	} else {
@@ -487,10 +508,7 @@ func (c *Crawler) handleTorrent(torrent *bittorrent.Torrent) {
 		logx.Errorf("Failed to commit torrent %s %s. %v", torrent.InfoHash, torrent.Name, err)
 		return
 	}
-	err = c.bloomFilter.Add(req.InfoHash)
-	if err != nil {
-		logx.Errorf("Failed to add bloom filter. %v", err)
-	}
+	c.bloomFilter.Add(req.InfoHash)
 }
 
 func (c *Crawler) LogStats() {
