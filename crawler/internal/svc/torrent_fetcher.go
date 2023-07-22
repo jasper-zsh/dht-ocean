@@ -50,6 +50,8 @@ func NewTorrentFetcher(svcCtx *ServiceContext) (*TorrentFetcher, error) {
 		uncheckedChan: make(chan TorrentRequest, 10000),
 		svcCtx:        svcCtx,
 	}
+	f.ctx, f.cancel = context.WithCancel(context.Background())
+
 	_, err := os.Stat(svcCtx.Config.BloomFilterPath)
 	if err != nil && os.IsNotExist(err) {
 		f.bloomFilter = util.NewBloomFilter(targetCount * 15)
@@ -69,7 +71,6 @@ func NewTorrentFetcher(svcCtx *ServiceContext) (*TorrentFetcher, error) {
 	}
 
 	f.executor = executor.NewExecutor(f.ctx, svcCtx.Config.TorrentWorkers, svcCtx.Config.TorrentMaxQueueSize, f.pullTorrent)
-	f.ctx, f.cancel = context.WithCancel(context.Background())
 
 	return f, nil
 }
