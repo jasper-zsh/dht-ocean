@@ -111,7 +111,8 @@ func (f *TorrentFetcher) Push(req TorrentRequest) {
 }
 
 func (f *TorrentFetcher) checkExistLoop() {
-	buf := make([]TorrentRequest, 0, 50)
+	batchSize := f.svcCtx.Config.CheckExistBatchSize
+	buf := make([]TorrentRequest, 0, batchSize)
 	for {
 		select {
 		case <-f.ctx.Done():
@@ -120,7 +121,7 @@ func (f *TorrentFetcher) checkExistLoop() {
 			buf = append(buf, req)
 			if len(buf) > 0 {
 				go f.batchCheck(buf)
-				buf = make([]TorrentRequest, 0, 50)
+				buf = make([]TorrentRequest, 0, batchSize)
 			}
 		}
 	}

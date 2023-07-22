@@ -353,7 +353,7 @@ func (c *Crawler) onGetPeersRequest(req *dht.GetPeersRequest, addr *net.UDPAddr)
 	//res := dht.NewGetPeersResponse(c.nodeID, req.Token())
 	res.SetT(tid)
 	_ = c.sendPacket(res.Packet, addr)
-	metricDHTSendCounter.Inc("get_peers")
+	metricDHTSendCounter.Inc("get_peers_response")
 	metricTrafficCounter.Add(float64(res.Packet.Size()), "out_get_peers_response")
 }
 

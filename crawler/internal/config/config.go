@@ -20,6 +20,7 @@ type Config struct {
 	TorrentMaxQueueSize int    `json:",default=1000"`
 	BloomFilterPath     string `json:",default=bloom.json"`
 	ForceQuitSeconds    int    `json:",default=20"`
+	CheckExistBatchSize int    `json:",default=50"`
 }
 
 func (c *Config) MustSetUp() {
