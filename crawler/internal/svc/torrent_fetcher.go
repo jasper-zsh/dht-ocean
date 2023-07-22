@@ -119,7 +119,7 @@ func (f *TorrentFetcher) checkExistLoop() {
 			return
 		case req := <-f.uncheckedChan:
 			buf = append(buf, req)
-			if len(buf) > 0 {
+			if len(buf) >= batchSize {
 				go f.batchCheck(buf)
 				buf = make([]TorrentRequest, 0, batchSize)
 			}
