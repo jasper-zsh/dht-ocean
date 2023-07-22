@@ -353,6 +353,7 @@ func (c *Crawler) onGetPeersRequest(req *dht.GetPeersRequest, addr *net.UDPAddr)
 	//res := dht.NewGetPeersResponse(c.nodeID, req.Token())
 	res.SetT(tid)
 	_ = c.sendPacket(res.Packet, addr)
+	metricDHTSendCounter.Inc("get_peers")
 	metricTrafficCounter.Add(float64(res.Packet.Size()), "out_get_peers_response")
 }
 
@@ -365,6 +366,7 @@ func (c *Crawler) onAnnouncePeerRequest(req *dht.AnnouncePeerRequest, addr *net.
 	// res := dht.NewEmptyResponsePacket(c.nodeID)
 	res.SetT(tid)
 	_ = c.sendPacket(res, addr)
+	metricDHTSendCounter.Inc("announce_peer_response")
 	metricTrafficCounter.Add(float64(res.Size()), "out_announce_peer_response")
 	logx.Debugf("Got announce peer %x %s", req.InfoHash(), req.Name())
 
