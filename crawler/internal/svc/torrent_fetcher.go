@@ -167,12 +167,14 @@ func (f *TorrentFetcher) pullTorrent(bt *bittorrent.BitTorrent) {
 	err := bt.Start()
 	if err != nil {
 		logx.Debugf("Failed to connect to peer to fetch metadata from %s %v", bt.Addr, err)
+		metricCrawlerEvent.Inc("connect_fail")
 		return
 	}
 	defer bt.Stop()
 	metadata, err := bt.GetMetadata()
 	if err != nil {
 		logx.Debugf("Failed to fetch metadata from %s %+v", bt.Addr, err)
+		metricCrawlerEvent.Inc("metadata_fail")
 		return
 	}
 	torrent := &bittorrent.Torrent{
@@ -197,6 +199,7 @@ func (f *TorrentFetcher) pullTorrent(bt *bittorrent.BitTorrent) {
 	err = decoder.Decode(metadata)
 	if err != nil {
 		logx.Errorf("Failed to decode metadata %v %v", metadata, err)
+		metricCrawlerEvent.Inc("decode_fail")
 		return
 	}
 	logx.Debugf("Got torrent %s with %d files", torrent.Name, len(torrent.Files))
