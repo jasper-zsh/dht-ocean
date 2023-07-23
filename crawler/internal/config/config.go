@@ -15,6 +15,8 @@ type Config struct {
 	BootstrapNodes      []string
 	FindNodeRateLimit   int    `json:",default=3000"`
 	MaxQueueSize        int    `json:",default=3000"`
+	SeenNodeTTL         uint16 `json:",default=300"`
+	MaxSeenNodeSize     int    `json:",default=2048576"`
 	NodeID              string `json:",optional"`
 	TorrentWorkers      int    `json:",default=100"`
 	TorrentMaxQueueSize int    `json:",default=1000"`

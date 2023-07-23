@@ -18,3 +18,5 @@ TorrentMaxQueueSize: 1000
 BloomFilterPath: bloom.bin
 ForceQuitSeconds: 20
 CheckExistBatchSize: 50
+MaxSeenNodeSize: 2048576
+SeenNodeTTL: 300

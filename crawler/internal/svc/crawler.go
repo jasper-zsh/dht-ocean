@@ -5,6 +5,7 @@ import (
 	"context"
 	"dht-ocean/common/bencode"
 	"dht-ocean/common/dht"
+	"dht-ocean/crawler/internal/utils"
 	"encoding/hex"
 	"fmt"
 	"net"
@@ -52,7 +53,8 @@ func init() {
 	metricQueueSize = metric.NewGaugeVec(&metric.GaugeVecOpts{
 		Namespace: metricsNamespace,
 		Subsystem: metricsSubsystem,
-		Name:      "neighbours_queue_size",
+		Name:      "queue_size",
+		Labels:    []string{"type"},
 	})
 	metricCrawlerEvent = metric.NewCounterVec(&metric.CounterVecOpts{
 		Namespace: metricsNamespace,
@@ -72,6 +74,7 @@ type Crawler struct {
 	nodeID          []byte
 	bootstrapNodes  []*dht.Node
 	neighbours      chan *dht.Node
+	seenNodes       *utils.LRWCache[string, struct{}]
 	findNodeLimiter *rate.Limiter
 	ticker          *time.Ticker
 	tm              *dht.TransactionManager
@@ -120,6 +123,7 @@ func NewCrawler(svcCtx *ServiceContext) (*Crawler, error) {
 	}
 	c.SetBootstrapNodes(svcCtx.Config.BootstrapNodes)
 	c.ctx, c.cancel = context.WithCancel(context.Background())
+	c.seenNodes = utils.NewLRWCache[string, struct{}](c.ctx, svcCtx.Config.SeenNodeTTL, svcCtx.Config.MaxSeenNodeSize)
 
 	c.findNodeLimiter = rate.NewLimiter(rate.Limit(c.svcCtx.Config.FindNodeRateLimit), c.svcCtx.Config.FindNodeRateLimit)
 	return c, nil
@@ -159,7 +163,7 @@ func (c *Crawler) bootstrap() {
 		case <-c.ctx.Done():
 			return
 		case <-c.ticker.C:
-			metricQueueSize.Set(float64(len(c.neighbours)))
+			metricQueueSize.Set(float64(len(c.neighbours)), "neighbours")
 			if len(c.neighbours) == 0 {
 				logx.Infof("Running out of neighbours, sending %d bootstrap nodes", len(c.bootstrapNodes))
 				for _, node := range c.bootstrapNodes {
@@ -323,13 +327,22 @@ func (c *Crawler) onFindNodeResponse(nodes []*dht.Node) {
 	metricDHTReceiveCounter.Inc("find_node")
 	for _, node := range nodes {
 		if c.maxQueueSize > 0 && len(c.neighbours) >= c.maxQueueSize {
+			metricCrawlerEvent.Inc("drop_node")
 			return
 		}
 		if !node.Addr.IP.IsUnspecified() &&
 			!bytes.Equal(c.nodeID, node.NodeID) &&
 			node.Addr.Port < 65536 &&
 			node.Addr.Port > 0 {
-			c.neighbours <- node
+			key := node.Addr.String()
+			_, seen := c.seenNodes.Get(key)
+			if !seen {
+				c.seenNodes.Set(key, struct{}{})
+				c.neighbours <- node
+				metricCrawlerEvent.Inc("queue_node")
+			} else {
+				metricCrawlerEvent.Inc("seen_node")
+			}
 		}
 	}
 }
