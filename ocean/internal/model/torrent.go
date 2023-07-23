@@ -3,8 +3,9 @@ package model
 import (
 	"dht-ocean/ocean/ocean"
 	"encoding/hex"
-	"github.com/kamva/mgm/v3"
 	"time"
+
+	"github.com/kamva/mgm/v3"
 )
 
 var _ mgm.Model = (*Torrent)(nil)
@@ -53,4 +54,13 @@ func NewTorrentFromCommitRequest(t *ocean.CommitTorrentRequest) *Torrent {
 		r.Length += file.Length
 	}
 	return r
+}
+
+func (t *Torrent) Corrupted() bool {
+	for _, f := range t.Files {
+		if len(f.Paths) == 0 {
+			return true
+		}
+	}
+	return false
 }

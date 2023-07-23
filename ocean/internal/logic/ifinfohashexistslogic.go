@@ -3,12 +3,13 @@ package logic
 import (
 	"context"
 	"encoding/hex"
-	"go.mongodb.org/mongo-driver/bson"
 
+	"dht-ocean/ocean/internal/model"
 	"dht-ocean/ocean/internal/svc"
 	"dht-ocean/ocean/ocean"
 
 	"github.com/zeromicro/go-zero/core/logx"
+	"go.mongodb.org/mongo-driver/mongo"
 )
 
 type IfInfoHashExistsLogic struct {
@@ -26,14 +27,18 @@ func NewIfInfoHashExistsLogic(ctx context.Context, svcCtx *svc.ServiceContext) *
 }
 
 func (l *IfInfoHashExistsLogic) IfInfoHashExists(in *ocean.IfInfoHashExistsRequest) (*ocean.IfInfoHashExistsResponse, error) {
-	cnt, err := l.svcCtx.TorrentCollection.CountDocuments(nil, bson.M{
-		"_id": hex.EncodeToString(in.InfoHash),
-	})
+	ret := &ocean.IfInfoHashExistsResponse{}
+	torrent := model.Torrent{}
+	err := l.svcCtx.TorrentCollection.FindByID(hex.EncodeToString(in.InfoHash), &torrent)
 	if err != nil {
-		return nil, err
+		if err == mongo.ErrNoDocuments {
+			ret.Exists = false
+		} else {
+			return nil, err
+		}
+	} else {
+		ret.Exists = !torrent.Corrupted()
 	}
 
-	return &ocean.IfInfoHashExistsResponse{
-		Exists: cnt > 0,
-	}, nil
+	return ret, nil
 }

@@ -4,11 +4,12 @@ import (
 	"context"
 	"encoding/hex"
 
+	"dht-ocean/ocean/internal/model"
 	"dht-ocean/ocean/internal/svc"
 	"dht-ocean/ocean/ocean"
 
 	"github.com/zeromicro/go-zero/core/logx"
-	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
 )
 
 type BatchInfoHashExistLogic struct {
@@ -28,13 +29,17 @@ func NewBatchInfoHashExistLogic(ctx context.Context, svcCtx *svc.ServiceContext)
 func (l *BatchInfoHashExistLogic) BatchInfoHashExist(in *ocean.BatchInfoHashExistRequest) (*ocean.BatchInfoHashExistResponse, error) {
 	results := make([]bool, len(in.InfoHashes))
 	for idx, infoHash := range in.InfoHashes {
-		cnt, err := l.svcCtx.TorrentCollection.CountDocuments(nil, bson.M{
-			"_id": hex.EncodeToString(infoHash),
-		})
+		torrent := model.Torrent{}
+		err := l.svcCtx.TorrentCollection.FindByID(hex.EncodeToString(infoHash), &torrent)
 		if err != nil {
-			return nil, err
+			if err == mongo.ErrNoDocuments {
+				results[idx] = false
+			} else {
+				return nil, err
+			}
+		} else {
+			results[idx] = !torrent.Corrupted()
 		}
-		results[idx] = cnt > 0
 	}
 
 	return &ocean.BatchInfoHashExistResponse{
