@@ -5,12 +5,13 @@ import (
 	"dht-ocean/ocean/internal/model"
 	"dht-ocean/ocean/internal/svc"
 	"dht-ocean/ocean/ocean"
+	"sync"
+	"time"
+
 	"github.com/kamva/mgm/v3/operator"
 	"github.com/sirupsen/logrus"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo/options"
-	"sync"
-	"time"
 
 	"github.com/zeromicro/go-zero/core/logx"
 )
@@ -52,13 +53,12 @@ func (l *ListTorrentInfoForTrackerLogic) ListTorrentInfoForTracker(in *ocean.Lis
 		}()
 	}
 	wait.Wait()
-	res := &ocean.ListTorrentInfoForTrackerResponse{
-		TorrentInfos: make([]*ocean.Torrent, 0, len(records)),
-	}
+	infoHashes := make([]string, 0, len(records))
 	for _, record := range records {
-		res.TorrentInfos = append(res.TorrentInfos, &ocean.Torrent{
-			InfoHash: record.InfoHash,
-		})
+		infoHashes = append(infoHashes, record.InfoHash)
+	}
+	res := &ocean.ListTorrentInfoForTrackerResponse{
+		InfoHashes: infoHashes,
 	}
 
 	return res, nil

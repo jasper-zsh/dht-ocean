@@ -4,6 +4,7 @@ import (
 	"context"
 	"dht-ocean/ocean/oceanclient"
 	"encoding/hex"
+
 	"github.com/sirupsen/logrus"
 	"github.com/zeromicro/go-zero/core/logx"
 )
@@ -39,11 +40,10 @@ func (u *TrackerUpdater) refreshTracker() {
 		logx.Errorf("Failed to fetch torrent infos for tracker from ocean. %v", err)
 		return
 	}
-	records := res.TorrentInfos
 
-	hashes := make([][]byte, 0, len(records))
-	for _, record := range records {
-		hash, err := hex.DecodeString(record.InfoHash)
+	hashes := make([][]byte, 0, len(res.InfoHashes))
+	for _, record := range res.InfoHashes {
+		hash, err := hex.DecodeString(record)
 		if err != nil {
 			logrus.Errorf("broken torrent record, skip tracker scrape")
 			return
@@ -58,7 +58,7 @@ func (u *TrackerUpdater) refreshTracker() {
 	reqs := make([]*oceanclient.UpdateTrackerRequest, 0, len(scrapes))
 	for i, r := range scrapes {
 		reqs = append(reqs, &oceanclient.UpdateTrackerRequest{
-			InfoHash: records[i].InfoHash,
+			InfoHash: res.InfoHashes[i],
 			Seeders:  r.Seeders,
 			Leechers: r.Leechers,
 		})
@@ -66,7 +66,7 @@ func (u *TrackerUpdater) refreshTracker() {
 			Requests: reqs,
 		})
 		if err != nil {
-			logx.Errorf("Failed to update tracker for %s", records[i].InfoHash)
+			logx.Errorf("Failed to update tracker for %s", res.InfoHashes[i])
 		}
 	}
 }

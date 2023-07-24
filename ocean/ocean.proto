@@ -40,12 +40,8 @@ message ListTorrentInfoForTrackerRequest {
   int64 size = 1;
 }
 
-message Torrent {
-  string info_hash = 1;
-}
-
 message ListTorrentInfoForTrackerResponse {
-  repeated Torrent torrent_infos = 1;
+  repeated string info_hashes = 1;
 }
 
 message UpdateTrackerRequest {
