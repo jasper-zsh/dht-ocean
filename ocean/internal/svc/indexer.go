@@ -4,13 +4,14 @@ import (
 	"context"
 	"dht-ocean/common/util"
 	"dht-ocean/ocean/internal/model"
+	"time"
+
 	"github.com/kamva/mgm/v3"
 	"github.com/kamva/mgm/v3/operator"
 	"github.com/olivere/elastic/v7"
 	"github.com/zeromicro/go-zero/core/logx"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo/options"
-	"time"
 )
 
 const (
@@ -50,7 +51,7 @@ func (i *Indexer) Start() {
 		case <-i.ctx.Done():
 			return
 		case <-i.hasTorrent:
-			cnt := i.indexTorrents(100)
+			cnt := i.indexTorrents(i.svcCtx.Config.IndexerBatchSize)
 			if cnt > 0 {
 				logx.Infof("Indexed %d torrents", cnt)
 				i.waitTicker.Reset(emptyWaitTime)
@@ -86,39 +87,38 @@ func (i *Indexer) indexTorrents(limit int64) int {
 		logx.Errorf("Failed to find records to index. %+v", err)
 		return 0
 	}
-	for _, record := range records {
-		record.SearchUpdated = true
-		err := i.saveToIndex(record)
-		if err != nil {
-			return 0
-		}
+	err = i.batchSaveToIndex(records)
+	if err != nil {
+		return 0
 	}
 	logx.Infof("Indexed %d torrents.", len(records))
 	return len(records)
 }
 
-func (i *Indexer) saveToIndex(torrent *model.Torrent) error {
+func (i *Indexer) batchSaveToIndex(torrents []*model.Torrent) error {
+	reqs := make([]elastic.BulkableRequest, 0, len(torrents))
+	for _, torrent := range torrents {
+		torrent.SearchUpdated = true
+		reqs = append(reqs, elastic.NewBulkUpdateRequest().Index("torrents").Id(torrent.InfoHash).Doc(torrent).DocAsUpsert(true))
+	}
+	_, err := i.client.Bulk().Add(reqs...).Do(i.ctx)
+	if err != nil {
+		logx.Errorf("Failed to index %d torrents. %+v", len(torrents), err)
+		return err
+	}
 	col := mgm.Coll(&model.Torrent{})
-	_, err := i.client.Update().
-		Index("torrents").
-		Id(torrent.InfoHash).
-		Doc(torrent).
-		DocAsUpsert(true).
-		Do(i.ctx)
-	if err != nil {
-		logx.Errorf("Failed to index torrent %s %s %v", torrent.InfoHash, torrent.Name, err)
-		return err
+	for _, torrent := range torrents {
+		_, err = col.UpdateByID(context.TODO(), torrent.InfoHash, bson.M{
+			operator.Set: bson.M{
+				"search_updated": true,
+			},
+		})
+		if err != nil {
+			logx.Errorf("Failed to update search_updated")
+			return err
+		}
 	}
-	_, err = col.UpdateByID(nil, torrent.InfoHash, bson.M{
-		operator.Set: bson.M{
-			"search_updated": true,
-		},
-	})
-	if err != nil {
-		logx.Errorf("Failed to update search_updated")
-		return err
-	}
-	i.svcCtx.MetricOceanEvent.Inc("torrent_indexed")
+	i.svcCtx.MetricOceanEvent.Add(float64(len(torrents)), "torrent_indexed")
 	return nil
 }
 

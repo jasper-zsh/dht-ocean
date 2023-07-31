@@ -7,7 +7,8 @@ import (
 
 type Config struct {
 	zrpc.RpcServerConf
-	Mongo         string
-	ElasticSearch string
-	Redis         redis.RedisConf
+	Mongo            string
+	ElasticSearch    string
+	Redis            redis.RedisConf
+	IndexerBatchSize int64
 }

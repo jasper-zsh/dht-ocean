@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/mitchellh/mapstructure"
+	"github.com/sirupsen/logrus"
 	"github.com/zeromicro/go-zero/core/logx"
 	"github.com/zeromicro/go-zero/core/threading"
 )
@@ -87,7 +88,9 @@ func (f *TorrentFetcher) Start() {
 func (f *TorrentFetcher) Stop() {
 	f.cancel()
 	f.executor.Stop()
-	bloomFile, err := os.Create(f.svcCtx.Config.BloomFilterPath)
+	tmpFilePath := f.svcCtx.Config.BloomFilterPath + ".tmp"
+	logrus.Infof("Writing bloom filter to tmp file: %s", tmpFilePath)
+	bloomFile, err := os.Create(tmpFilePath)
 	if err != nil {
 		panic(err)
 	}
@@ -97,6 +100,11 @@ func (f *TorrentFetcher) Stop() {
 	}
 	err = bloomFile.Close()
 	if err != nil {
+		panic(err)
+	}
+	err = os.Rename(tmpFilePath, f.svcCtx.Config.BloomFilterPath)
+	if err != nil {
+		logrus.Errorf("Failed to rename tmp bloom file: %+v", err)
 		panic(err)
 	}
 }
