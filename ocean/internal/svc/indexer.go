@@ -22,7 +22,6 @@ type Indexer struct {
 	ctx        context.Context
 	cancel     context.CancelFunc
 	svcCtx     *ServiceContext
-	client     *elastic.Client
 	waitTicker *time.Ticker
 	hasTorrent chan struct{}
 }
@@ -34,14 +33,6 @@ func NewIndexer(svcCtx *ServiceContext) *Indexer {
 		hasTorrent: make(chan struct{}, 1),
 	}
 	indexer.ctx, indexer.cancel = context.WithCancel(context.Background())
-	client, err := elastic.NewClient(
-		elastic.SetURL(svcCtx.Config.ElasticSearch),
-		elastic.SetSniff(false),
-	)
-	if err != nil {
-		panic(err)
-	}
-	indexer.client = client
 	return indexer
 }
 
@@ -101,7 +92,7 @@ func (i *Indexer) batchSaveToIndex(torrents []*model.Torrent) error {
 		torrent.SearchUpdated = true
 		reqs = append(reqs, elastic.NewBulkUpdateRequest().Index("torrents").Id(torrent.InfoHash).Doc(torrent).DocAsUpsert(true))
 	}
-	_, err := i.client.Bulk().Add(reqs...).Do(i.ctx)
+	_, err := i.svcCtx.ESClient.Bulk().Add(reqs...).Do(i.ctx)
 	if err != nil {
 		logx.Errorf("Failed to index %d torrents. %+v", len(torrents), err)
 		return err
@@ -123,6 +114,6 @@ func (i *Indexer) batchSaveToIndex(torrents []*model.Torrent) error {
 }
 
 func (i *Indexer) CountTorrents() (int64, error) {
-	cnt, err := i.client.Count("torrents").Do(i.ctx)
+	cnt, err := i.svcCtx.ESClient.Count("torrents").Do(i.ctx)
 	return cnt, err
 }

@@ -51,3 +51,8 @@ func (s *OceanServer) BatchUpdateTracker(ctx context.Context, in *ocean.BatchUpd
 	l := logic.NewBatchUpdateTrackerLogic(ctx, s.svcCtx)
 	return l.BatchUpdateTracker(in)
 }
+
+func (s *OceanServer) SearchTorrents(ctx context.Context, in *ocean.SearchTorrentsRequest) (*ocean.TorrentPageResponse, error) {
+	l := logic.NewSearchTorrentsLogic(ctx, s.svcCtx)
+	return l.SearchTorrents(in)
+}

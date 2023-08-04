@@ -24,6 +24,10 @@ type (
 	IfInfoHashExistsResponse          = ocean.IfInfoHashExistsResponse
 	ListTorrentInfoForTrackerRequest  = ocean.ListTorrentInfoForTrackerRequest
 	ListTorrentInfoForTrackerResponse = ocean.ListTorrentInfoForTrackerResponse
+	SearchTorrentsRequest             = ocean.SearchTorrentsRequest
+	SortParams                        = ocean.SortParams
+	Torrent                           = ocean.Torrent
+	TorrentPageResponse               = ocean.TorrentPageResponse
 	UpdateTrackerRequest              = ocean.UpdateTrackerRequest
 	UpdateTrackerResponse             = ocean.UpdateTrackerResponse
 
@@ -34,6 +38,7 @@ type (
 		ListTorrentInfoForTracker(ctx context.Context, in *ListTorrentInfoForTrackerRequest, opts ...grpc.CallOption) (*ListTorrentInfoForTrackerResponse, error)
 		UpdateTracker(ctx context.Context, in *UpdateTrackerRequest, opts ...grpc.CallOption) (*UpdateTrackerResponse, error)
 		BatchUpdateTracker(ctx context.Context, in *BatchUpdateTrackerRequest, opts ...grpc.CallOption) (*BatchUpdateTrackerResponse, error)
+		SearchTorrents(ctx context.Context, in *SearchTorrentsRequest, opts ...grpc.CallOption) (*TorrentPageResponse, error)
 	}
 
 	defaultOcean struct {
@@ -75,4 +80,9 @@ func (m *defaultOcean) UpdateTracker(ctx context.Context, in *UpdateTrackerReque
 func (m *defaultOcean) BatchUpdateTracker(ctx context.Context, in *BatchUpdateTrackerRequest, opts ...grpc.CallOption) (*BatchUpdateTrackerResponse, error) {
 	client := ocean.NewOceanClient(m.cli.Conn())
 	return client.BatchUpdateTracker(ctx, in, opts...)
+}
+
+func (m *defaultOcean) SearchTorrents(ctx context.Context, in *SearchTorrentsRequest, opts ...grpc.CallOption) (*TorrentPageResponse, error) {
+	client := ocean.NewOceanClient(m.cli.Conn())
+	return client.SearchTorrents(ctx, in, opts...)
 }

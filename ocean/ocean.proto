@@ -58,6 +58,33 @@ message BatchUpdateTrackerRequest {
 
 message BatchUpdateTrackerResponse {}
 
+message SortParams {
+  string field = 1;
+  bool asc = 2;
+}
+
+message SearchTorrentsRequest {
+  string keyword = 1;
+  uint32 per_page = 2;
+  uint32 page = 3;
+  repeated SortParams sort_params = 4;
+}
+
+message Torrent {
+  string info_hash = 1;
+  string name = 2;
+  string publisher = 3;
+  string source = 4;
+  uint32 seeders = 5;
+  uint32 leechers = 6;
+  repeated File files = 7;
+}
+
+message TorrentPageResponse {
+  repeated Torrent torrents = 1;
+  uint32 total = 2;
+}
+
 service Ocean {
   rpc IfInfoHashExists(IfInfoHashExistsRequest) returns (IfInfoHashExistsResponse);
   rpc BatchInfoHashExist(BatchInfoHashExistRequest) returns (BatchInfoHashExistResponse);
@@ -65,4 +92,5 @@ service Ocean {
   rpc ListTorrentInfoForTracker(ListTorrentInfoForTrackerRequest) returns (ListTorrentInfoForTrackerResponse);
   rpc UpdateTracker(UpdateTrackerRequest) returns (UpdateTrackerResponse);
   rpc BatchUpdateTracker(BatchUpdateTrackerRequest) returns (BatchUpdateTrackerResponse);
+  rpc SearchTorrents(SearchTorrentsRequest) returns (TorrentPageResponse);
 }

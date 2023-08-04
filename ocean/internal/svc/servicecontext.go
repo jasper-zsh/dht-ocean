@@ -3,7 +3,9 @@ package svc
 import (
 	"dht-ocean/ocean/internal/config"
 	"dht-ocean/ocean/internal/model"
+
 	"github.com/kamva/mgm/v3"
+	"github.com/olivere/elastic/v7"
 	"github.com/sirupsen/logrus"
 	"github.com/zeromicro/go-zero/core/metric"
 )
@@ -19,6 +21,7 @@ type ServiceContext struct {
 	Indexer           *Indexer
 	MetricOceanEvent  metric.CounterVec
 	TorrentCountGauge metric.GaugeVec
+	ESClient          *elastic.Client
 }
 
 func NewServiceContext(c config.Config) *ServiceContext {
@@ -44,5 +47,13 @@ func NewServiceContext(c config.Config) *ServiceContext {
 		Name:      "torrent_count",
 		Labels:    []string{"type"},
 	})
+
+	svcCtx.ESClient, err = elastic.NewClient(
+		elastic.SetURL(svcCtx.Config.ElasticSearch),
+		elastic.SetSniff(false),
+	)
+	if err != nil {
+		panic(err)
+	}
 	return svcCtx
 }
