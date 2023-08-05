@@ -28,11 +28,18 @@ func NewSearchTorrentsLogic(ctx context.Context, svcCtx *svc.ServiceContext) *Se
 
 func (l *SearchTorrentsLogic) SearchTorrents(in *ocean.SearchTorrentsRequest) (*ocean.TorrentPageResponse, error) {
 	q := elastic.NewBoolQuery().Should(
-		elastic.NewMatchQuery("name", in.Keyword),
+		elastic.NewMatchQuery("name", in.Keyword).Boost(3),
 		elastic.NewMatchQuery("tags", in.Keyword),
-		elastic.NewMatchQuery("files.paths", in.Keyword),
+		elastic.NewMatchQuery("files.paths", in.Keyword).Boost(2),
 	)
-	res, err := l.svcCtx.ESClient.Search("torrents").Size(int(in.PerPage)).From(int(in.PerPage * (in.Page - 1))).Query(q).Do(l.ctx)
+	req := l.svcCtx.ESClient.Search("torrents").
+		Size(int(in.PerPage)).
+		From(int(in.PerPage * (in.Page - 1))).
+		Query(q)
+	for _, sort := range in.SortParams {
+		req.Sort(sort.Field, sort.Asc)
+	}
+	res, err := req.Do(l.ctx)
 	if err != nil {
 		return nil, err
 	}
