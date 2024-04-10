@@ -60,21 +60,6 @@ pipeline {
             deployTasks["Deploy ${it}"] = {
               stage("Deploy ${it}") {
                 container("kubectl") {
-                  contentReplace(
-                    configs: [
-                      fileContentReplaceConfig(
-                        configs: [
-                          fileContentReplaceItemConfig(
-                            search: '(\\#\\{IMAGE\\})',
-                            replace: "${tag}",
-                            matchCount: 1,
-                          )
-                        ],
-                        fileEncoding: 'UTF-8',
-                        filePath: k8sFile
-                      )
-                    ]
-                  )
                   withKubeConfig(namespace: "${env.NAMESPACE}") {
                     sh "kubectl rollout restart deploy ${it}-deployment"
                   }
