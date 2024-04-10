@@ -70,7 +70,7 @@ func main() {
 				logx.Infof("Added %d info hashes", cnt)
 			}
 		}
-		bloomFile, err := os.Create("bloom.bin")
+		bloomFile, err := os.Create(c.BloomFilterPath)
 		if err != nil {
 			logx.Errorf("Failed to create bloom filter file. %+v", err)
 			return

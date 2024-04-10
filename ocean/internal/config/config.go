@@ -9,6 +9,6 @@ type Config struct {
 	zrpc.RpcServerConf
 	Mongo            string
 	ElasticSearch    string
-	Redis            redis.RedisConf
 	IndexerBatchSize int64
+	BloomFilterPath  string `json:",default=bloom.json"`
 }

@@ -43,42 +43,40 @@ pipeline {
           deployTasks = [:]
           buildDocker.each() {
             def dockerfile = "${it}/Dockerfile"
-            def tag = "${env.DOCKER_REGISTRY}/${env.NAMESPACE}/${it}:${env.GIT_COMMIT}"
-            println "Built task for ${dockerfile} as ${tag}"
+            def commitTag = "${env.DOCKER_REGISTRY}/${env.NAMESPACE}/${it}:${env.GIT_COMMIT}"
+            def latestTag = "${env.DOCKER_REGISTRY}/${env.NAMESPACE}/${it}:latest"
+            println "Built task for ${dockerfile} as ${commitTag}"
             stage("Build and push ${it}") {
               container("kaniko") {
                 sh """
                 /kaniko/executor --cache=true \
                   --context `pwd` \
                   --dockerfile `pwd`/${dockerfile} \
-                  --destination ${tag}
+                  --destination ${commitTag} \
+                  --destination ${latestTag}
                 """
               }
             }
-            def k8sFile = "${it}/k8s.yaml"
-            def k8sFound = findFiles(glob: k8sFile).length > 0
-            if (k8sFound) {
-              deployTasks["Deploy ${it}"] = {
-                stage("Deploy ${it}") {
-                  container("kubectl") {
-                    contentReplace(
-                      configs: [
-                        fileContentReplaceConfig(
-                          configs: [
-                            fileContentReplaceItemConfig(
-                              search: '(\\#\\{IMAGE\\})',
-                              replace: "${tag}",
-                              matchCount: 1,
-                            )
-                          ],
-                          fileEncoding: 'UTF-8',
-                          filePath: k8sFile
-                        )
-                      ]
-                    )
-                    withKubeConfig(namespace: "${env.NAMESPACE}") {
-                      sh "kubectl apply -f ${k8sFile}"
-                    }
+            deployTasks["Deploy ${it}"] = {
+              stage("Deploy ${it}") {
+                container("kubectl") {
+                  contentReplace(
+                    configs: [
+                      fileContentReplaceConfig(
+                        configs: [
+                          fileContentReplaceItemConfig(
+                            search: '(\\#\\{IMAGE\\})',
+                            replace: "${tag}",
+                            matchCount: 1,
+                          )
+                        ],
+                        fileEncoding: 'UTF-8',
+                        filePath: k8sFile
+                      )
+                    ]
+                  )
+                  withKubeConfig(namespace: "${env.NAMESPACE}") {
+                    sh "kubectl rollout restart deploy ${it}-deployment"
                   }
                 }
               }
