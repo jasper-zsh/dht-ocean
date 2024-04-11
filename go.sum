@@ -224,6 +224,8 @@ github.com/jasper-zsh/socks5 v0.0.0-20240411163424-27496cd171de h1:KgDBH2dXy7q+p
 github.com/jasper-zsh/socks5 v0.0.0-20240411163424-27496cd171de/go.mod h1:l+NmqKWyPkI3lCfdYeuLXFXNv73o/o4A1TohQ5TX1lA=
 github.com/jasper-zsh/socks5 v0.0.0-20240411165301-50b7b75599cf h1:4nyFc1aLtDZ+oc3QFJwDxzHqVzb9ua0BK7mM1gwqdNM=
 github.com/jasper-zsh/socks5 v0.0.0-20240411165301-50b7b75599cf/go.mod h1:l+NmqKWyPkI3lCfdYeuLXFXNv73o/o4A1TohQ5TX1lA=
+github.com/jasper-zsh/socks5 v0.0.0-20240411173309-6cca19325d57 h1:GMakJXKoG1Xan9NCx+qph0DKSrakyrDUOHKnOZ54Ua8=
+github.com/jasper-zsh/socks5 v0.0.0-20240411173309-6cca19325d57/go.mod h1:l+NmqKWyPkI3lCfdYeuLXFXNv73o/o4A1TohQ5TX1lA=
 github.com/jinzhu/inflection v1.0.0 h1:K317FqzuhWc8YvSVlFMCCUb36O/S9MCKRDI7QkRKD/E=
 github.com/jinzhu/inflection v1.0.0/go.mod h1:h+uFLlag+Qp1Va5pdKtLDYj+kHp5pxUVkryuEj+Srlc=
 github.com/joho/godotenv v1.3.0/go.mod h1:7hK45KPybAkOC6peb+G5yklZfMxEjkZhHbwpqxOKXbg=
