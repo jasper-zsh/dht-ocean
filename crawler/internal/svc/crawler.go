@@ -9,9 +9,11 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net"
+	"net/netip"
 	"sync"
 	"time"
 
+	"github.com/jasper-zsh/socks5"
 	"github.com/zeromicro/go-zero/core/logx"
 	"github.com/zeromicro/go-zero/core/metric"
 	"github.com/zeromicro/go-zero/core/threading"
@@ -69,8 +71,9 @@ type InfoHashFilter func(infoHash []byte) bool
 type Crawler struct {
 	ctx             context.Context
 	cancel          context.CancelFunc
+	socks5Proxy     string
 	addr            *net.UDPAddr
-	conn            *net.UDPConn
+	conn            net.PacketConn
 	nodeID          []byte
 	bootstrapNodes  []*dht.Node
 	neighbours      chan *dht.Node
@@ -113,6 +116,7 @@ func NewCrawler(svcCtx *ServiceContext) (*Crawler, error) {
 	}
 
 	c := &Crawler{
+		socks5Proxy:   svcCtx.Config.Socks5Proxy,
 		addr:          addr,
 		nodeID:        nodeID,
 		tm:            &dht.TransactionManager{},
@@ -175,10 +179,23 @@ func (c *Crawler) bootstrap() {
 }
 
 func (c *Crawler) Start() {
-	conn, err := net.ListenUDP("udp", c.addr)
-	if err != nil {
-		logx.Errorf("Failed to listen udp on %s. %v", c.addr, err)
-		panic(err)
+	var conn net.PacketConn
+	var err error
+	if len(c.socks5Proxy) > 0 {
+		proxy := socks5.NewClient(socks5.ClientOptions{
+			Addr: c.socks5Proxy,
+		})
+		conn, err = proxy.UDPAssociate(c.addr)
+		if err != nil {
+			logx.Errorf("Failed to listen udp via proxy on %s. %+v", c.addr, err)
+			panic(err)
+		}
+	} else {
+		conn, err = net.ListenUDP("udp", c.addr)
+		if err != nil {
+			logx.Errorf("Failed to listen udp on %s. %v", c.addr, err)
+			panic(err)
+		}
 	}
 	c.conn = conn
 
@@ -208,7 +225,7 @@ func (c *Crawler) listen() {
 		case <-c.ctx.Done():
 			return
 		default:
-			transfered, addr, err := c.conn.ReadFromUDP(buf)
+			transfered, addr, err := c.conn.ReadFrom(buf)
 			if err != nil {
 				continue
 			}
@@ -238,13 +255,13 @@ func (c *Crawler) handleMessage() {
 	}
 }
 
-func (c *Crawler) sendPacket(pkt *dht.Packet, addr *net.UDPAddr) error {
+func (c *Crawler) sendPacket(pkt *dht.Packet, addr net.Addr) error {
 	encoded, err := pkt.Encode()
 	if err != nil {
 		logx.Errorf("Failed to encode packet: %s, %v", pkt, err)
 		return err
 	}
-	bytes, err := c.conn.WriteToUDP([]byte(encoded), addr)
+	bytes, err := c.conn.WriteTo([]byte(encoded), addr)
 	if err != nil {
 		logx.Errorf("Failed to write to udp %s %v", addr, err)
 		return err
@@ -282,7 +299,7 @@ func (c *Crawler) sendPing(addr *net.UDPAddr) {
 	metricTrafficCounter.Add(float64(req.Packet.Size()), "out_ping")
 }
 
-func (c *Crawler) onMessage(packet *dht.Packet, addr *net.UDPAddr) {
+func (c *Crawler) onMessage(packet *dht.Packet, addr net.Addr) {
 	switch packet.GetY() {
 	case "r":
 		if bencode.CheckMapPath(packet.Data, "r.nodes") {
@@ -347,7 +364,7 @@ func (c *Crawler) onFindNodeResponse(nodes []*dht.Node) {
 	}
 }
 
-func (c *Crawler) onGetPeersRequest(req *dht.GetPeersRequest, addr *net.UDPAddr) {
+func (c *Crawler) onGetPeersRequest(req *dht.GetPeersRequest, addr net.Addr) {
 	metricDHTReceiveCounter.Inc("get_peers")
 	tid := req.GetT()
 	if tid == nil {
@@ -370,7 +387,7 @@ func (c *Crawler) onGetPeersRequest(req *dht.GetPeersRequest, addr *net.UDPAddr)
 	metricTrafficCounter.Add(float64(res.Packet.Size()), "out_get_peers_response")
 }
 
-func (c *Crawler) onAnnouncePeerRequest(req *dht.AnnouncePeerRequest, addr *net.UDPAddr) {
+func (c *Crawler) onAnnouncePeerRequest(req *dht.AnnouncePeerRequest, addr net.Addr) {
 	metricDHTReceiveCounter.Inc("announce_peer")
 	tid := req.GetT()
 	// AlphaReign
@@ -385,7 +402,8 @@ func (c *Crawler) onAnnouncePeerRequest(req *dht.AnnouncePeerRequest, addr *net.
 
 	var a string
 	if req.ImpliedPort() == 0 {
-		a = fmt.Sprintf("%s:%d", addr.IP, req.Port())
+		addrPort, _ := netip.ParseAddrPort(addr.String())
+		a = fmt.Sprintf("%s:%d", addrPort.Addr().String(), req.Port())
 	} else {
 		a = addr.String()
 	}

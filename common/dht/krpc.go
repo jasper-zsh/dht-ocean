@@ -10,7 +10,7 @@ import (
 type Packet struct {
 	buf  []byte
 	Data map[string]any
-	Addr *net.UDPAddr
+	Addr net.Addr
 }
 
 func NewPacket() *Packet {

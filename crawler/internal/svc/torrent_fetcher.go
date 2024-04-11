@@ -35,6 +35,7 @@ type TorrentFetcher struct {
 	uncheckedChan chan TorrentRequest
 	bloomFilter   *util.BloomFilter
 	executor      *executor.Executor[*bittorrent.BitTorrent]
+	socks5Proxy   string
 }
 
 func InjectTorrentFetcher(svcCtx *ServiceContext) {
@@ -50,6 +51,7 @@ func NewTorrentFetcher(svcCtx *ServiceContext) (*TorrentFetcher, error) {
 	f := &TorrentFetcher{
 		uncheckedChan: make(chan TorrentRequest, 10000),
 		svcCtx:        svcCtx,
+		socks5Proxy:   svcCtx.Config.Socks5Proxy,
 	}
 	f.ctx, f.cancel = context.WithCancel(context.Background())
 
@@ -159,6 +161,7 @@ func (f *TorrentFetcher) batchCheck(reqs []TorrentRequest) {
 
 func (f *TorrentFetcher) commit(req TorrentRequest) {
 	bt := bittorrent.NewBitTorrent(req.NodeID, req.InfoHash, req.Addr)
+	bt.Socks5Proxy = f.socks5Proxy
 	bt.SetTrafficMetricFunc(func(label string, length int) {
 		metricTrafficCounter.Add(float64(length), label)
 	})

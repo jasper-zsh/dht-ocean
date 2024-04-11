@@ -23,6 +23,7 @@ type Config struct {
 	BloomFilterPath     string `json:",default=bloom.json"`
 	ForceQuitSeconds    int    `json:",default=20"`
 	CheckExistBatchSize int    `json:",default=50"`
+	Socks5Proxy         string `json:",optional"`
 }
 
 func (c *Config) MustSetUp() {

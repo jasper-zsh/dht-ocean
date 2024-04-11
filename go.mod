@@ -11,7 +11,7 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/sirupsen/logrus v1.8.1
 	github.com/spaolacci/murmur3 v1.1.0
-	github.com/stretchr/testify v1.8.4
+	github.com/stretchr/testify v1.9.0
 	github.com/zeromicro/go-zero v1.5.5
 	go.mongodb.org/mongo-driver v1.12.1
 	golang.org/x/time v0.3.0
@@ -44,9 +44,11 @@ require (
 	github.com/google/go-cmp v0.5.9 // indirect
 	github.com/google/gofuzz v1.2.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.15.0 // indirect
+	github.com/jasper-zsh/socks5 v0.0.0-20240411155737-563858782fe9 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
+	github.com/juju/errors v1.0.0 // indirect
 	github.com/klauspost/compress v1.15.15 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect

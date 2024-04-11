@@ -14,6 +14,7 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
+	"golang.org/x/net/proxy"
 )
 
 var (
@@ -39,6 +40,7 @@ type Piece struct {
 }
 
 type BitTorrent struct {
+	Socks5Proxy       string
 	Addr              string
 	conn              net.Conn
 	InfoHash          []byte
@@ -66,11 +68,22 @@ func (bt *BitTorrent) trafficMetric(label string, length int) {
 }
 
 func (bt *BitTorrent) Start() error {
-	conn, err := net.DialTimeout("tcp", bt.Addr, time.Second*10)
-	if err != nil {
-		return errors.WithStack(err)
+	var err error
+	if len(bt.Socks5Proxy) > 0 {
+		socks, err := proxy.SOCKS5("tcp", bt.Socks5Proxy, nil, nil)
+		if err != nil {
+			return errors.WithStack(err)
+		}
+		bt.conn, err = socks.Dial("tcp", bt.Addr)
+		if err != nil {
+			return errors.WithStack(err)
+		}
+	} else {
+		bt.conn, err = net.DialTimeout("tcp", bt.Addr, time.Second*10)
+		if err != nil {
+			return errors.WithStack(err)
+		}
 	}
-	bt.conn = conn
 	return nil
 }
 
