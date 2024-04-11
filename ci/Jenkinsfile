@@ -35,6 +35,11 @@ pipeline {
               services.each {
                 buildDocker.add(it)
               }
+            } else if (parts[0] == "go.mod") {
+              println "go.mod changed, build all services: ${services}"
+              services.each {
+                buildDocker.add(it)
+              }
             } else if (services.contains(parts[0])) {
               buildDocker.add(parts[0])
             }
