@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/jasper-zsh/socks5"
+	"github.com/juju/errors"
 	"github.com/zeromicro/go-zero/core/logx"
 	"github.com/zeromicro/go-zero/core/metric"
 	"github.com/zeromicro/go-zero/core/threading"
@@ -84,6 +85,11 @@ type Crawler struct {
 	packetBuffers   chan *dht.Packet
 	maxQueueSize    int
 	svcCtx          *ServiceContext
+
+	keepaliveTicker *time.Ticker
+	sent            uint64
+	received        uint64
+	connLock        sync.RWMutex
 }
 
 func InjectCrawler(svcCtx *ServiceContext) {
@@ -162,6 +168,7 @@ func (c *Crawler) SetBootstrapNodes(addrs []string) {
 }
 
 func (c *Crawler) bootstrap() {
+	counter := 0
 	for {
 		select {
 		case <-c.ctx.Done():
@@ -169,7 +176,11 @@ func (c *Crawler) bootstrap() {
 		case <-c.ticker.C:
 			metricQueueSize.Set(float64(len(c.neighbours)), "neighbours")
 			if len(c.neighbours) == 0 {
-				logx.Infof("Running out of neighbours, sending %d bootstrap nodes", len(c.bootstrapNodes))
+				counter += 1
+				if counter%30 == 0 {
+					logx.Infof("Running out of neighbours, sending %d bootstrap nodes", len(c.bootstrapNodes))
+					counter = 0
+				}
 				for _, node := range c.bootstrapNodes {
 					c.neighbours <- node
 				}
@@ -179,39 +190,106 @@ func (c *Crawler) bootstrap() {
 }
 
 func (c *Crawler) Start() {
-	var conn net.PacketConn
-	var err error
-	if len(c.socks5Proxy) > 0 {
-		proxy := socks5.NewClient(socks5.ClientOptions{
-			Addr: c.socks5Proxy,
-		})
-		conn, err = proxy.UDPAssociate(c.addr)
-		if err != nil {
-			logx.Errorf("Failed to listen udp via proxy on %s. %+v", c.addr, err)
-			panic(err)
-		}
-	} else {
-		conn, err = net.ListenUDP("udp", c.addr)
-		if err != nil {
-			logx.Errorf("Failed to listen udp on %s. %v", c.addr, err)
-			panic(err)
-		}
+	err := c.connect()
+	if err != nil {
+		panic(err)
 	}
-	c.conn = conn
 
 	c.ticker = time.NewTicker(time.Second)
 	routineGroup := threading.NewRoutineGroup()
-	routineGroup.RunSafe(c.listen)
 	routineGroup.RunSafe(c.handleMessage)
 	routineGroup.RunSafe(c.makeNeighbours)
 	routineGroup.RunSafe(c.bootstrap)
 	routineGroup.Wait()
 }
 
-func (c *Crawler) Stop() {
-	if c.conn != nil {
-		_ = c.conn.Close()
+func (c *Crawler) connect() error {
+	c.connLock.Lock()
+	defer c.connLock.Unlock()
+	err := c._connect()
+	if err != nil {
+		return errors.Trace(err)
 	}
+	return nil
+}
+
+func (c *Crawler) disconnect() {
+	c.connLock.Lock()
+	defer c.connLock.Unlock()
+	c._disconnect()
+}
+
+func (c *Crawler) reconnect() error {
+	c.connLock.Lock()
+	defer c.connLock.Unlock()
+	c._disconnect()
+	err := c._connect()
+	if err != nil {
+		return errors.Trace(err)
+	}
+	return nil
+}
+
+func (c *Crawler) _connect() error {
+	if c.conn != nil {
+		return nil
+	}
+	var err error
+	if len(c.socks5Proxy) > 0 {
+		proxy := socks5.NewClient(socks5.ClientOptions{
+			Addr: c.socks5Proxy,
+		})
+		c.conn, err = proxy.UDPAssociate(c.addr)
+		if err != nil {
+			logx.Errorf("Failed to listen udp via proxy on %s. %+v", c.addr, err)
+			return errors.Trace(err)
+		}
+	} else {
+		c.conn, err = net.ListenUDP("udp", c.addr)
+		if err != nil {
+			logx.Errorf("Failed to listen udp on %s. %v", c.addr, err)
+			return errors.Trace(err)
+		}
+	}
+	go c.listen()
+	if c.keepaliveTicker == nil {
+		c.keepaliveTicker = time.NewTicker(5 * time.Second)
+		go func() {
+			for {
+				select {
+				case <-c.ctx.Done():
+					return
+				case <-c.keepaliveTicker.C:
+					if c.sent > 0 && float64(c.received)/float64(c.sent) < 0.1 {
+						// listener died
+						err := c.reconnect()
+						if err != nil {
+							logx.Errorf("Reconnect failed: %+v", err)
+						}
+					}
+					c.received = 0
+					c.sent = 0
+				}
+			}
+		}()
+	} else {
+		c.keepaliveTicker.Reset(5 * time.Second)
+	}
+	return nil
+}
+
+func (c *Crawler) _disconnect() {
+	if c.conn != nil {
+		c.conn.Close()
+		c.conn = nil
+	}
+	if c.keepaliveTicker != nil {
+		c.keepaliveTicker.Stop()
+	}
+}
+
+func (c *Crawler) Stop() {
+	c.disconnect()
 	if c.ticker != nil {
 		c.ticker.Stop()
 	}
@@ -225,6 +303,9 @@ func (c *Crawler) listen() {
 		case <-c.ctx.Done():
 			return
 		default:
+			if c.conn == nil {
+				return
+			}
 			transfered, addr, err := c.conn.ReadFrom(buf)
 			if err != nil {
 				continue
@@ -261,6 +342,11 @@ func (c *Crawler) sendPacket(pkt *dht.Packet, addr net.Addr) error {
 		logx.Errorf("Failed to encode packet: %s, %v", pkt, err)
 		return err
 	}
+	c.connLock.RLock()
+	defer c.connLock.RUnlock()
+	if c.conn == nil {
+		return errors.New("udp closed")
+	}
 	bytes, err := c.conn.WriteTo([]byte(encoded), addr)
 	if err != nil {
 		logx.Errorf("Failed to write to udp %s %v", addr, err)
@@ -289,6 +375,7 @@ func (c *Crawler) sendFindNode(nodeID []byte, target []byte, addr *net.UDPAddr) 
 	_ = c.sendPacket(req.Packet, addr)
 	metricDHTSendCounter.Inc("find_node")
 	metricTrafficCounter.Add(float64(req.Packet.Size()), "out_find_node")
+	c.sent += 1
 }
 
 func (c *Crawler) sendPing(addr *net.UDPAddr) {
@@ -309,6 +396,7 @@ func (c *Crawler) onMessage(packet *dht.Packet, addr net.Addr) {
 			}
 			c.onFindNodeResponse(res.Nodes)
 			metricTrafficCounter.Add(float64(packet.Size()), "in_find_node_response")
+			c.received += 1
 		}
 	case "q":
 		switch packet.GetQ() {
