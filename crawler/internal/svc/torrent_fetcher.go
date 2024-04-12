@@ -12,10 +12,12 @@ import (
 	"reflect"
 	"strings"
 
+	"github.com/juju/errors"
 	"github.com/mitchellh/mapstructure"
 	"github.com/sirupsen/logrus"
 	"github.com/zeromicro/go-zero/core/logx"
 	"github.com/zeromicro/go-zero/core/threading"
+	"golang.org/x/net/proxy"
 )
 
 const (
@@ -35,7 +37,7 @@ type TorrentFetcher struct {
 	uncheckedChan chan TorrentRequest
 	bloomFilter   *util.BloomFilter
 	executor      *executor.Executor[*bittorrent.BitTorrent]
-	socks5Proxy   string
+	proxy         proxy.Dialer
 }
 
 func InjectTorrentFetcher(svcCtx *ServiceContext) {
@@ -51,11 +53,17 @@ func NewTorrentFetcher(svcCtx *ServiceContext) (*TorrentFetcher, error) {
 	f := &TorrentFetcher{
 		uncheckedChan: make(chan TorrentRequest, 10000),
 		svcCtx:        svcCtx,
-		socks5Proxy:   svcCtx.Config.Socks5Proxy,
+	}
+	var err error
+	if len(svcCtx.Config.Socks5Proxy) > 0 {
+		f.proxy, err = proxy.SOCKS5("tcp", svcCtx.Config.Socks5Proxy, nil, nil)
+		if err != nil {
+			return nil, errors.Trace(err)
+		}
 	}
 	f.ctx, f.cancel = context.WithCancel(context.Background())
 
-	_, err := os.Stat(svcCtx.Config.BloomFilterPath)
+	_, err = os.Stat(svcCtx.Config.BloomFilterPath)
 	if err != nil && os.IsNotExist(err) {
 		f.bloomFilter = util.NewBloomFilter(targetCount * 15)
 	} else {
@@ -161,7 +169,7 @@ func (f *TorrentFetcher) batchCheck(reqs []TorrentRequest) {
 
 func (f *TorrentFetcher) commit(req TorrentRequest) {
 	bt := bittorrent.NewBitTorrent(req.NodeID, req.InfoHash, req.Addr)
-	bt.Socks5Proxy = f.socks5Proxy
+	bt.Proxy = f.proxy
 	bt.SetTrafficMetricFunc(func(label string, length int) {
 		metricTrafficCounter.Add(float64(length), label)
 	})

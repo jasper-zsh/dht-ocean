@@ -40,7 +40,7 @@ type Piece struct {
 }
 
 type BitTorrent struct {
-	Socks5Proxy       string
+	Proxy             proxy.Dialer
 	Addr              string
 	conn              net.Conn
 	InfoHash          []byte
@@ -69,12 +69,8 @@ func (bt *BitTorrent) trafficMetric(label string, length int) {
 
 func (bt *BitTorrent) Start() error {
 	var err error
-	if len(bt.Socks5Proxy) > 0 {
-		socks, err := proxy.SOCKS5("tcp", bt.Socks5Proxy, nil, nil)
-		if err != nil {
-			return errors.WithStack(err)
-		}
-		bt.conn, err = socks.Dial("tcp", bt.Addr)
+	if bt.Proxy != nil {
+		bt.conn, err = bt.Proxy.Dial("tcp", bt.Addr)
 		if err != nil {
 			return errors.WithStack(err)
 		}
