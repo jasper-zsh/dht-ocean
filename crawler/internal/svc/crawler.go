@@ -199,8 +199,7 @@ func (c *Crawler) Start() {
 
 	c.ticker = time.NewTicker(time.Second)
 	routineGroup := threading.NewRoutineGroup()
-	routineGroup.RunSafe(c.handleMessage)
-	routineGroup.RunSafe(c.makeNeighbours)
+	routineGroup.RunSafe(c.loop)
 	routineGroup.RunSafe(c.bootstrap)
 	routineGroup.Wait()
 }
@@ -254,29 +253,29 @@ func (c *Crawler) _connect() error {
 		}
 	}
 	go c.listen()
-	if c.keepaliveTicker == nil {
-		c.keepaliveTicker = time.NewTicker(5 * time.Second)
-		go func() {
-			for {
-				select {
-				case <-c.ctx.Done():
-					return
-				case <-c.keepaliveTicker.C:
-					if c.sent > 0 && float64(c.received)/float64(c.sent) < 0.1 {
-						// listener died
-						err := c.reconnect()
-						if err != nil {
-							logx.Errorf("Reconnect failed: %+v", err)
-						}
-					}
-					c.received = 0
-					c.sent = 0
-				}
-			}
-		}()
-	} else {
-		c.keepaliveTicker.Reset(5 * time.Second)
-	}
+	// if c.keepaliveTicker == nil {
+	// 	c.keepaliveTicker = time.NewTicker(5 * time.Second)
+	// 	go func() {
+	// 		for {
+	// 			select {
+	// 			case <-c.ctx.Done():
+	// 				return
+	// 			case <-c.keepaliveTicker.C:
+	// 				if c.sent > 0 && float64(c.received)/float64(c.sent) < 0.1 || c.conn == nil {
+	// 					// listener died
+	// 					err := c.reconnect()
+	// 					if err != nil {
+	// 						logx.Errorf("Reconnect failed: %+v", err)
+	// 					}
+	// 				}
+	// 				c.received = 0
+	// 				c.sent = 0
+	// 			}
+	// 		}
+	// 	}()
+	// } else {
+	// 	c.keepaliveTicker.Reset(5 * time.Second)
+	// }
 	return nil
 }
 
@@ -322,7 +321,7 @@ func (c *Crawler) listen() {
 	}
 }
 
-func (c *Crawler) handleMessage() {
+func (c *Crawler) loop() {
 	for {
 		select {
 		case <-c.ctx.Done():
@@ -334,6 +333,9 @@ func (c *Crawler) handleMessage() {
 				continue
 			}
 			c.onMessage(pkt, pkt.Addr)
+		case node := <-c.neighbours:
+			_ = c.findNodeLimiter.Wait(c.ctx)
+			c.sendFindNode(dht.GetNeighbourID(node.NodeID, c.nodeID), dht.GenerateNodeID(), node.Addr)
 		}
 	}
 }
@@ -356,18 +358,6 @@ func (c *Crawler) sendPacket(pkt *dht.Packet, addr net.Addr) error {
 	}
 	logx.Debugf("Send %d bytes to %s", bytes, addr)
 	return nil
-}
-
-func (c *Crawler) makeNeighbours() {
-	for {
-		select {
-		case <-c.ctx.Done():
-			return
-		case node := <-c.neighbours:
-			_ = c.findNodeLimiter.Wait(c.ctx)
-			c.sendFindNode(dht.GetNeighbourID(node.NodeID, c.nodeID), dht.GenerateNodeID(), node.Addr)
-		}
-	}
 }
 
 func (c *Crawler) sendFindNode(nodeID []byte, target []byte, addr *net.UDPAddr) {

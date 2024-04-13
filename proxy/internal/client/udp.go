@@ -30,8 +30,8 @@ func NewUDPConn(conn net.Conn) *UDPConn {
 
 // ReadFrom implements net.PacketConn.
 func (u *UDPConn) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
-	u.readLock.Lock()
-	defer u.readLock.Unlock()
+	// u.readLock.Lock()
+	// defer u.readLock.Unlock()
 
 	var addrPort netip.AddrPort
 	addrPort, err = u.readHeader.ReadFrom(u.proxyConn)
@@ -53,8 +53,8 @@ func (u *UDPConn) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
 
 // WriteTo implements net.PacketConn.
 func (u *UDPConn) WriteTo(p []byte, addr net.Addr) (n int, err error) {
-	u.writeLock.Lock()
-	defer u.writeLock.Unlock()
+	// u.writeLock.Lock()
+	// defer u.writeLock.Unlock()
 
 	u.writeHeader.Length = uint32(len(p))
 	var addrPort netip.AddrPort
