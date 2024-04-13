@@ -1,7 +1,7 @@
 package main
 
 import (
-	config2 "dht-ocean/crawler/internal/config"
+	"dht-ocean/crawler/internal/config"
 	"dht-ocean/crawler/internal/svc"
 	"flag"
 	_ "net/http/pprof"
@@ -16,7 +16,7 @@ var configFile = flag.String("f", "etc/crawler.yaml", "the config file")
 func main() {
 	flag.Parse()
 
-	var c config2.Config
+	var c config.Config
 	conf.MustLoad(*configFile, &c)
 	c.MustSetUp()
 	ctx := svc.NewServiceContext(c)

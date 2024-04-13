@@ -21,6 +21,15 @@
             "program": "${workspaceFolder}/crawler",
             "cwd": "${workspaceFolder}/crawler",
             "args": ["-f", "etc/crawler.yaml"]
+        },
+        {
+            "name": "Run proxy",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "${workspaceFolder}/proxy",
+            "cwd": "${workspaceFolder}/proxy",
+            "args": ["-f", "etc/proxy.yaml"]
         }
     ]
 }

@@ -14,54 +14,25 @@ pipeline {
       }
       steps {
         script {
-          def publisher = LastChanges.getLastChangesPublisher "LAST_SUCCESSFUL_BUILD", "SIDE", "LINE", true, true, "", "", "", "", ""
-          publisher.publishLastChanges()
-          def changes = publisher.getLastChanges()
-          def pattern = /diff --([\w]+) a\/(.*?) b\/(.*?)\n/
-          def c = changes.getDiff()
-          def files = findFiles(glob: "*/Dockerfile")
-          def services = []
-          files.each {
-            println "Found Dockerfile: ${it}"
-            def parts = it.path.split("/")
-            services.add(parts[0])
-          }
-          def buildDocker = [] as Set<String>
-          c.eachMatch(pattern) { m ->
-            def filename = m[2]
-            def parts = filename.split("/")
-            if (parts[0] == "common") {
-              println "Common changed, build all services: ${services}"
-              services.each {
-                buildDocker.add(it)
-              }
-            } else if (parts[0] == "go.mod") {
-              println "go.mod changed, build all services: ${services}"
-              services.each {
-                buildDocker.add(it)
-              }
-            } else if (services.contains(parts[0])) {
-              buildDocker.add(parts[0])
+          def dockerfile = "ci/Dockerfile"
+          def commitTag = "${env.DOCKER_REGISTRY}/dht-ocean/dht-ocean:${env.GIT_COMMIT}"
+          def latestTag = "${env.DOCKER_REGISTRY}/dht-ocean/dht-ocean:latest"
+          println "Built task for ${dockerfile} as ${commitTag}"
+          stage("Build and push ${it}") {
+            container("kaniko") {
+              sh """
+              /kaniko/executor --cache=true \
+                --context `pwd` \
+                --dockerfile `pwd`/${dockerfile} \
+                --destination ${commitTag} \
+                --destination ${latestTag}
+              """
             }
           }
-          println "Find services to build: ${buildDocker}"
+          def services = ["crawler", "ocean", "tracker", "proxy"]
+          
           deployTasks = [:]
-          buildDocker.each() {
-            def dockerfile = "${it}/Dockerfile"
-            def commitTag = "${env.DOCKER_REGISTRY}/${env.NAMESPACE}/${it}:${env.GIT_COMMIT}"
-            def latestTag = "${env.DOCKER_REGISTRY}/${env.NAMESPACE}/${it}:latest"
-            println "Built task for ${dockerfile} as ${commitTag}"
-            stage("Build and push ${it}") {
-              container("kaniko") {
-                sh """
-                /kaniko/executor --cache=true \
-                  --context `pwd` \
-                  --dockerfile `pwd`/${dockerfile} \
-                  --destination ${commitTag} \
-                  --destination ${latestTag}
-                """
-              }
-            }
+          services.each() {
             deployTasks["Deploy ${it}"] = {
               stage("Deploy ${it}") {
                 container("kubectl") {
