@@ -13,16 +13,14 @@ ADD go.sum .
 RUN go mod download
 COPY . .
 COPY crawler/etc /app/etc
-RUN go build -ldflags="-s -w" -o /app/crawler crawler/crawler.go
-
 COPY ocean/etc /app/etc
-RUN go build -ldflags="-s -w" -o /app/ocean ocean/ocean.go
-
 COPY proxy/etc /app/etc
-RUN go build -ldflags="-s -w" -o /app/proxy proxy/proxy.go
-
 COPY tracker/etc /app/etc
-RUN go build -ldflags="-s -w" -o /app/tracker tracker/tracker.go
+
+RUN go build -ldflags="-s -w" -o /app/crawler crawler/crawler.go && \
+    go build -ldflags="-s -w" -o /app/ocean ocean/ocean.go && \
+    go build -ldflags="-s -w" -o /app/proxy proxy/cmd/proxy.go && \
+    go build -ldflags="-s -w" -o /app/tracker tracker/tracker.go
 
 FROM --platform=linux/amd64 alpine
 

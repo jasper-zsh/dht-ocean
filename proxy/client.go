@@ -1,4 +1,4 @@
-package internal
+package proxy
 
 import (
 	"dht-ocean/proxy/internal/client"

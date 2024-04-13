@@ -1,6 +1,7 @@
-package internal
+package proxy
 
 import (
+	"dht-ocean/proxy/internal"
 	"net"
 	"net/netip"
 	"testing"
@@ -9,7 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-var proxyServer *ProxyServer
+var proxyServer *internal.ProxyServer
 var proxyClient *ProxyClient
 
 const (
@@ -17,7 +18,7 @@ const (
 )
 
 func TestMain(m *testing.M) {
-	proxyServer = NewProxyServer(ProxyServerOptions{
+	proxyServer = internal.NewProxyServer(internal.ProxyServerOptions{
 		Listen: serverAddr,
 	})
 	go proxyServer.Start()

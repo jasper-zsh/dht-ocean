@@ -29,7 +29,7 @@ pipeline {
               """
             }
           }
-          def services = ["crawler", "ocean", "tracker", "proxy"]
+          def services = ["deployment/crawler", "deployment/ocean", "deployment/tracker", "statefulset/proxy"]
           
           deployTasks = [:]
           services.each() {
@@ -37,7 +37,7 @@ pipeline {
               stage("Deploy ${it}") {
                 container("kubectl") {
                   withKubeConfig(namespace: "${env.NAMESPACE}") {
-                    sh "kubectl rollout restart deploy ${it}-deployment"
+                    sh "kubectl rollout restart ${it}"
                   }
                 }
               }

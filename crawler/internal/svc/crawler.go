@@ -6,6 +6,7 @@ import (
 	"dht-ocean/common/bencode"
 	"dht-ocean/common/dht"
 	"dht-ocean/crawler/internal/utils"
+	"dht-ocean/proxy"
 	"encoding/hex"
 	"fmt"
 	"net"
@@ -13,7 +14,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jasper-zsh/socks5"
 	"github.com/juju/errors"
 	"github.com/zeromicro/go-zero/core/logx"
 	"github.com/zeromicro/go-zero/core/metric"
@@ -73,6 +73,7 @@ type Crawler struct {
 	ctx             context.Context
 	cancel          context.CancelFunc
 	socks5Proxy     string
+	proxy           string
 	addr            *net.UDPAddr
 	conn            net.PacketConn
 	nodeID          []byte
@@ -123,6 +124,7 @@ func NewCrawler(svcCtx *ServiceContext) (*Crawler, error) {
 
 	c := &Crawler{
 		socks5Proxy:   svcCtx.Config.Socks5Proxy,
+		proxy:         svcCtx.Config.Proxy,
 		addr:          addr,
 		nodeID:        nodeID,
 		tm:            &dht.TransactionManager{},
@@ -235,13 +237,13 @@ func (c *Crawler) _connect() error {
 		return nil
 	}
 	var err error
-	if len(c.socks5Proxy) > 0 {
-		proxy := socks5.NewClient(socks5.ClientOptions{
-			Addr: c.socks5Proxy,
+	if len(c.proxy) > 0 {
+		proxy := proxy.NewProxyClient(proxy.ProxyClientOptions{
+			Server: c.proxy,
 		})
-		c.conn, err = proxy.UDPAssociate(c.addr)
+		c.conn, err = proxy.ListenUDP()
 		if err != nil {
-			logx.Errorf("Failed to listen udp via proxy on %s. %+v", c.addr, err)
+			logx.Errorf("Failed to listen udp via proxy. %+v", err)
 			return errors.Trace(err)
 		}
 	} else {

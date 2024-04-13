@@ -50,7 +50,6 @@ func (u *UDPHandler) Stop() {
 
 func (u *UDPHandler) send() {
 	hdr := protocol.UDPHeader{}
-	buf := make([]byte, 4096)
 	var n int
 	for {
 		addrPort, err := hdr.ReadFrom(u.clientConn)
@@ -59,6 +58,7 @@ func (u *UDPHandler) send() {
 			u.Stop()
 			return
 		}
+		buf := make([]byte, hdr.Length)
 		n, err = u.clientConn.Read(buf)
 		if err != nil {
 			logx.Errorf("Failed to read data from client: %+v", err)
