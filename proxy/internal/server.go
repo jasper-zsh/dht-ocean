@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"context"
 	"dht-ocean/proxy/internal/handler"
 	"dht-ocean/proxy/internal/protocol"
 	"net"
@@ -16,14 +17,16 @@ type ProxyServer struct {
 	options ProxyServerOptions
 
 	listener net.Listener
-	handlers map[string]handler.Handler
+	ctx      context.Context
+	cancel   context.CancelFunc
 }
 
 func NewProxyServer(options ProxyServerOptions) *ProxyServer {
-	return &ProxyServer{
-		options:  options,
-		handlers: make(map[string]handler.Handler),
+	s := &ProxyServer{
+		options: options,
 	}
+	s.ctx, s.cancel = context.WithCancel(context.TODO())
+	return s
 }
 
 func (s *ProxyServer) Start() {
@@ -40,16 +43,12 @@ func (s *ProxyServer) Start() {
 }
 
 func (s *ProxyServer) Stop() {
+	s.cancel()
 	if s.listener != nil {
 		s.listener.Close()
 	}
-	for _, handler := range s.handlers {
-		handler.Stop()
-	}
-	s.handlers = make(map[string]handler.Handler)
 }
 
-// FIXME: leak when closed by client side
 func (s *ProxyServer) listen() {
 	handshake := protocol.Handshake{}
 	for {
@@ -65,20 +64,9 @@ func (s *ProxyServer) listen() {
 		}
 		switch handshake.Mode {
 		case protocol.ModeUDP:
-			handler := handler.NewUDPHandler(conn)
-			err := handler.Start()
-			if err != nil {
-				logx.Errorf("Failed to create udp handler: %+v", err)
-				conn.Close()
-				continue
-			}
-			key := conn.RemoteAddr().String()
-			h, ok := s.handlers[key]
-			if ok {
-				h.Stop()
-			}
-			s.handlers[key] = handler
-			logx.Infof("Created UDP Handler: %s", key)
+			handler := handler.NewUDPHandler(s.ctx, conn)
+			go handler.Run()
+			logx.Infof("Created UDP Handler: %s", conn.RemoteAddr().String())
 		}
 	}
 }

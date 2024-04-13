@@ -87,10 +87,7 @@ type Crawler struct {
 	maxQueueSize    int
 	svcCtx          *ServiceContext
 
-	keepaliveTicker *time.Ticker
-	sent            uint64
-	received        uint64
-	connLock        sync.RWMutex
+	connLock sync.RWMutex
 }
 
 func InjectCrawler(svcCtx *ServiceContext) {
@@ -253,29 +250,6 @@ func (c *Crawler) _connect() error {
 		}
 	}
 	go c.listen()
-	// if c.keepaliveTicker == nil {
-	// 	c.keepaliveTicker = time.NewTicker(5 * time.Second)
-	// 	go func() {
-	// 		for {
-	// 			select {
-	// 			case <-c.ctx.Done():
-	// 				return
-	// 			case <-c.keepaliveTicker.C:
-	// 				if c.sent > 0 && float64(c.received)/float64(c.sent) < 0.1 || c.conn == nil {
-	// 					// listener died
-	// 					err := c.reconnect()
-	// 					if err != nil {
-	// 						logx.Errorf("Reconnect failed: %+v", err)
-	// 					}
-	// 				}
-	// 				c.received = 0
-	// 				c.sent = 0
-	// 			}
-	// 		}
-	// 	}()
-	// } else {
-	// 	c.keepaliveTicker.Reset(5 * time.Second)
-	// }
 	return nil
 }
 
@@ -283,9 +257,6 @@ func (c *Crawler) _disconnect() {
 	if c.conn != nil {
 		c.conn.Close()
 		c.conn = nil
-	}
-	if c.keepaliveTicker != nil {
-		c.keepaliveTicker.Stop()
 	}
 }
 
@@ -339,14 +310,16 @@ func (c *Crawler) sendPacket(pkt *dht.Packet, addr net.Addr) error {
 		logx.Errorf("Failed to encode packet: %s, %v", pkt, err)
 		return err
 	}
-	c.connLock.RLock()
-	defer c.connLock.RUnlock()
 	if c.conn == nil {
-		return errors.New("udp closed")
+		err = c.connect()
+		if err != nil {
+			return errors.Trace(err)
+		}
 	}
 	bytes, err := c.conn.WriteTo([]byte(encoded), addr)
 	if err != nil {
 		logx.Errorf("Failed to write to udp %s %v", addr, err)
+		c.disconnect()
 		return err
 	}
 	logx.Debugf("Send %d bytes to %s", bytes, addr)
@@ -360,7 +333,6 @@ func (c *Crawler) sendFindNode(nodeID []byte, target []byte, addr *net.UDPAddr) 
 	_ = c.sendPacket(req.Packet, addr)
 	metricDHTSendCounter.Inc("find_node")
 	metricTrafficCounter.Add(float64(req.Packet.Size()), "out_find_node")
-	c.sent += 1
 }
 
 func (c *Crawler) sendPing(addr *net.UDPAddr) {
@@ -381,7 +353,6 @@ func (c *Crawler) onMessage(packet *dht.Packet, addr net.Addr) {
 			}
 			c.onFindNodeResponse(res.Nodes)
 			metricTrafficCounter.Add(float64(packet.Size()), "in_find_node_response")
-			c.received += 1
 		}
 	case "q":
 		switch packet.GetQ() {
