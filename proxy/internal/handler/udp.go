@@ -85,7 +85,8 @@ func (u *UDPHandler) send() {
 func (u *UDPHandler) receive() {
 	hdr := protocol.UDPHeader{}
 	readBuf := make([]byte, 4096)
-	writeBuf := make([]byte, 4096)
+	writeBuf := make([]byte, 0, 4096)
+	writer := bytes.NewBuffer(writeBuf)
 	for {
 		n, addrPort, err := u.localConn.ReadFromUDPAddrPort(readBuf)
 		if err != nil {
@@ -104,7 +105,6 @@ func (u *UDPHandler) receive() {
 			logx.Errorf("Failed to set addr: %+v", err)
 			continue
 		}
-		writer := bytes.NewBuffer(writeBuf)
 		err = hdr.WriteTo(writer, rawAddr)
 		if err != nil {
 			logx.Errorf("Failed to write header to client: %+v", err)
@@ -123,5 +123,6 @@ func (u *UDPHandler) receive() {
 			u.cancel()
 			return
 		}
+		writer.Reset()
 	}
 }

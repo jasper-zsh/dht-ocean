@@ -19,7 +19,7 @@ type UDPConn struct {
 	readHeader protocol.UDPHeader
 	readLock   sync.Mutex
 
-	writeBuf    []byte
+	writeBuf    *bytes.Buffer
 	writeHeader protocol.UDPHeader
 	writeLock   sync.Mutex
 }
@@ -27,6 +27,7 @@ type UDPConn struct {
 func NewUDPConn(conn net.Conn) *UDPConn {
 	return &UDPConn{
 		proxyConn: conn,
+		writeBuf:  bytes.NewBuffer(make([]byte, 0, 4096)),
 	}
 }
 
@@ -71,22 +72,22 @@ func (u *UDPConn) WriteTo(p []byte, addr net.Addr) (n int, err error) {
 		err = errors.Trace(err)
 		return
 	}
-	writer := bytes.NewBuffer(u.writeBuf)
-	err = u.writeHeader.WriteTo(writer, rawAddr)
+	err = u.writeHeader.WriteTo(u.writeBuf, rawAddr)
 	if err != nil {
 		err = errors.Trace(err)
 		return
 	}
-	n, err = writer.Write(p)
+	n, err = u.writeBuf.Write(p)
 	if err != nil {
 		err = errors.Trace(err)
 		return
 	}
-	_, err = u.proxyConn.Write(writer.Bytes())
+	_, err = u.proxyConn.Write(u.writeBuf.Bytes())
 	if err != nil {
 		err = errors.Trace(err)
 		return
 	}
+	u.writeBuf.Reset()
 	return
 }
 
