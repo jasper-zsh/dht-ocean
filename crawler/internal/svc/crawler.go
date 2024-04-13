@@ -274,6 +274,7 @@ func (c *Crawler) listen() {
 		transfered, addr, err := c.conn.ReadFrom(buf)
 		if err != nil {
 			logx.Errorf("Connection broken: %+v", err)
+			c.disconnect()
 			return
 		}
 		logx.Debugf("Read %d bytes from udp %s", transfered, addr)

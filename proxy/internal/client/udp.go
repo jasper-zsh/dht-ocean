@@ -1,6 +1,7 @@
 package client
 
 import (
+	"bytes"
 	"dht-ocean/proxy/internal/protocol"
 	"net"
 	"net/netip"
@@ -18,6 +19,7 @@ type UDPConn struct {
 	readHeader protocol.UDPHeader
 	readLock   sync.Mutex
 
+	writeBuf    []byte
 	writeHeader protocol.UDPHeader
 	writeLock   sync.Mutex
 }
@@ -69,12 +71,18 @@ func (u *UDPConn) WriteTo(p []byte, addr net.Addr) (n int, err error) {
 		err = errors.Trace(err)
 		return
 	}
-	err = u.writeHeader.WriteTo(u.proxyConn, rawAddr)
+	writer := bytes.NewBuffer(u.writeBuf)
+	err = u.writeHeader.WriteTo(writer, rawAddr)
 	if err != nil {
 		err = errors.Trace(err)
 		return
 	}
-	n, err = u.proxyConn.Write(p)
+	n, err = writer.Write(p)
+	if err != nil {
+		err = errors.Trace(err)
+		return
+	}
+	_, err = u.proxyConn.Write(writer.Bytes())
 	if err != nil {
 		err = errors.Trace(err)
 		return
