@@ -1,0 +1,9 @@
+dev:
+  proxy:
+    image: golang
+    command: ["bash"]
+    nodeSelector:
+      region: jp
+    sync:
+      - .:/app
+    
