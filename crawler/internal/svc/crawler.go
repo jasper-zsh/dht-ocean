@@ -300,24 +300,17 @@ func (c *Crawler) Stop() {
 func (c *Crawler) listen() {
 	buf := make([]byte, 65536)
 	for {
-		select {
-		case <-c.ctx.Done():
+		transfered, addr, err := c.conn.ReadFrom(buf)
+		if err != nil {
+			logx.Errorf("Connection broken: %+v", err)
 			return
-		default:
-			if c.conn == nil {
-				return
-			}
-			transfered, addr, err := c.conn.ReadFrom(buf)
-			if err != nil {
-				continue
-			}
-			logx.Debugf("Read %d bytes from udp %s", transfered, addr)
-			msg := make([]byte, transfered)
-			copy(msg, buf)
-			pkt := dht.NewPacketFromBuffer(msg)
-			pkt.Addr = addr
-			c.packetBuffers <- pkt
 		}
+		logx.Debugf("Read %d bytes from udp %s", transfered, addr)
+		msg := make([]byte, transfered)
+		copy(msg, buf)
+		pkt := dht.NewPacketFromBuffer(msg)
+		pkt.Addr = addr
+		c.packetBuffers <- pkt
 	}
 }
 

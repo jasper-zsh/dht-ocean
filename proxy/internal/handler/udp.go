@@ -89,6 +89,11 @@ func (u *UDPHandler) receive() {
 			u.Stop()
 			return
 		}
+		if n == len(buf) {
+			logx.Errorf("packet size %d too large, expand buffer size and drop", n)
+			buf = make([]byte, 2*len(buf))
+			continue
+		}
 		hdr.Length = uint32(n)
 		rawAddr, err := hdr.SetAddr(addrPort)
 		if err != nil {
