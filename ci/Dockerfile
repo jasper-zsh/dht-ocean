@@ -31,6 +31,6 @@ RUN apk update --no-cache && apk add --no-cache ca-certificates tzdata
 ENV TZ Asia/Shanghai
 
 WORKDIR /app
-COPY --from=builder /app
+COPY --from=builder /app /app
 
 CMD ["./crawler", "-f", "etc/crawler.yaml"]
