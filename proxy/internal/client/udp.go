@@ -1,7 +1,7 @@
 package client
 
 import (
-	"bytes"
+	"bufio"
 	"dht-ocean/proxy/internal/protocol"
 	"io"
 	"net"
@@ -15,31 +15,33 @@ var _ net.PacketConn = (*UDPConn)(nil)
 
 type UDPConn struct {
 	proxyConn net.Conn
+	buffered  io.ReadWriter
 
-	readHeader protocol.UDPHeader
-
-	writeBuf    *bytes.Buffer
+	readHeader  protocol.UDPHeader
 	writeHeader protocol.UDPHeader
 }
 
-func NewUDPConn(conn net.Conn) *UDPConn {
+func NewUDPConn(conn net.Conn, bufSize int) *UDPConn {
 	return &UDPConn{
 		proxyConn: conn,
-		writeBuf:  bytes.NewBuffer(make([]byte, 0, 4096)),
+		buffered: bufio.NewReadWriter(
+			bufio.NewReaderSize(conn, bufSize),
+			bufio.NewWriterSize(conn, bufSize),
+		),
 	}
 }
 
 // ReadFrom implements net.PacketConn.
 func (u *UDPConn) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
 	var addrPort netip.AddrPort
-	addrPort, err = u.readHeader.ReadFrom(u.proxyConn)
+	addrPort, err = u.readHeader.ReadFrom(u.buffered)
 	if err != nil {
 		err = errors.Trace(err)
 		return
 	}
 	addr = net.UDPAddrFromAddrPort(addrPort)
 
-	n, err = io.ReadFull(u.proxyConn, p[:u.readHeader.Length])
+	n, err = io.ReadFull(u.buffered, p[:u.readHeader.Length])
 	if err != nil {
 		err = errors.Trace(err)
 		return
@@ -62,22 +64,16 @@ func (u *UDPConn) WriteTo(p []byte, addr net.Addr) (n int, err error) {
 		err = errors.Trace(err)
 		return
 	}
-	err = u.writeHeader.WriteTo(u.writeBuf, rawAddr)
+	err = u.writeHeader.WriteTo(u.buffered, rawAddr)
 	if err != nil {
 		err = errors.Trace(err)
 		return
 	}
-	n, err = u.writeBuf.Write(p)
+	n, err = u.buffered.Write(p)
 	if err != nil {
 		err = errors.Trace(err)
 		return
 	}
-	_, err = u.proxyConn.Write(u.writeBuf.Bytes())
-	if err != nil {
-		err = errors.Trace(err)
-		return
-	}
-	u.writeBuf.Reset()
 	return
 }
 

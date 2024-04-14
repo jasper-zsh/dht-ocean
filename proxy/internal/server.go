@@ -10,7 +10,8 @@ import (
 )
 
 type ProxyServerOptions struct {
-	Listen string
+	Listen     string
+	BufferSize int
 }
 
 type ProxyServer struct {
@@ -64,7 +65,7 @@ func (s *ProxyServer) listen() {
 		}
 		switch handshake.Mode {
 		case protocol.ModeUDP:
-			handler := handler.NewUDPHandler(s.ctx, conn)
+			handler := handler.NewUDPHandler(s.ctx, conn, s.options.BufferSize)
 			go handler.Run()
 			logx.Infof("Created UDP Handler: %s", conn.RemoteAddr().String())
 		}

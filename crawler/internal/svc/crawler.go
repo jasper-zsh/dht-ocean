@@ -235,7 +235,8 @@ func (c *Crawler) _connect() error {
 	var err error
 	if len(c.proxy) > 0 {
 		proxy := proxy.NewProxyClient(proxy.ProxyClientOptions{
-			Server: c.proxy,
+			Server:  c.proxy,
+			BufSize: c.svcCtx.Config.ProxyBufSize,
 		})
 		c.conn, err = proxy.ListenUDP()
 		if err != nil {

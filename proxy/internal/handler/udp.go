@@ -1,7 +1,7 @@
 package handler
 
 import (
-	"bytes"
+	"bufio"
 	"context"
 	"dht-ocean/proxy/internal/protocol"
 	"io"
@@ -15,13 +15,20 @@ var _ Handler = (*UDPHandler)(nil)
 type UDPHandler struct {
 	clientConn net.Conn
 	localConn  *net.UDPConn
-	ctx        context.Context
-	cancel     context.CancelFunc
+
+	buffered io.ReadWriter
+
+	ctx    context.Context
+	cancel context.CancelFunc
 }
 
-func NewUDPHandler(ctx context.Context, conn net.Conn) (ret *UDPHandler) {
+func NewUDPHandler(ctx context.Context, conn net.Conn, bufSize int) (ret *UDPHandler) {
 	ret = &UDPHandler{
 		clientConn: conn,
+		buffered: bufio.NewReadWriter(
+			bufio.NewReaderSize(conn, bufSize),
+			bufio.NewWriterSize(conn, bufSize),
+		),
 	}
 	ret.ctx, ret.cancel = context.WithCancel(ctx)
 	return
@@ -55,19 +62,19 @@ func (u *UDPHandler) close() {
 func (u *UDPHandler) send() {
 	hdr := protocol.UDPHeader{}
 	var n int
-	readBuf := make([]byte, 4096)
+	pipeBuf := make([]byte, 4096)
 	for {
-		addrPort, err := hdr.ReadFrom(u.clientConn)
+		addrPort, err := hdr.ReadFrom(u.buffered)
 		if err != nil {
 			logx.Errorf("Failed to read header from client: %+v", err)
 			u.cancel()
 			return
 		}
-		if int(hdr.Length) > len(readBuf) {
-			logx.Infof("read buf size %d smaller than packet size %d, extend", len(readBuf), hdr.Length)
-			readBuf = make([]byte, 2*len(readBuf))
+		if int(hdr.Length) > len(pipeBuf) {
+			logx.Infof("read buf size %d smaller than packet size %d, extend", len(pipeBuf), hdr.Length)
+			pipeBuf = make([]byte, 2*len(pipeBuf))
 		}
-		n, err = io.ReadFull(u.clientConn, readBuf[:hdr.Length])
+		n, err = io.ReadFull(u.buffered, pipeBuf[:hdr.Length])
 		if err != nil {
 			logx.Errorf("Failed to read data from client: %+v", err)
 			u.cancel()
@@ -78,7 +85,7 @@ func (u *UDPHandler) send() {
 			u.cancel()
 			return
 		}
-		_, err = u.localConn.WriteToUDPAddrPort(readBuf[:n], addrPort)
+		_, err = u.localConn.WriteToUDPAddrPort(pipeBuf[:n], addrPort)
 		if err != nil {
 			logx.Errorf("Failed to write to udp: %+v", err)
 			u.cancel()
@@ -90,8 +97,6 @@ func (u *UDPHandler) send() {
 func (u *UDPHandler) receive() {
 	hdr := protocol.UDPHeader{}
 	readBuf := make([]byte, 4096)
-	writeBuf := make([]byte, 0, 4096)
-	writer := bytes.NewBuffer(writeBuf)
 	for {
 		n, addrPort, err := u.localConn.ReadFromUDPAddrPort(readBuf)
 		if err != nil {
@@ -110,24 +115,17 @@ func (u *UDPHandler) receive() {
 			logx.Errorf("Failed to set addr: %+v", err)
 			continue
 		}
-		err = hdr.WriteTo(writer, rawAddr)
+		err = hdr.WriteTo(u.buffered, rawAddr)
 		if err != nil {
 			logx.Errorf("Failed to write header to client: %+v", err)
 			u.cancel()
 			return
 		}
-		_, err = writer.Write(readBuf[:n])
-		if err != nil {
-			logx.Errorf("Failed to write to buffer: %+v", err)
-			u.cancel()
-			return
-		}
-		_, err = u.clientConn.Write(writer.Bytes())
+		_, err = u.buffered.Write(readBuf[:n])
 		if err != nil {
 			logx.Errorf("Failed to write data to client: %+v", err)
 			u.cancel()
 			return
 		}
-		writer.Reset()
 	}
 }

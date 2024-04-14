@@ -10,7 +10,8 @@ import (
 )
 
 type ProxyClientOptions struct {
-	Server string
+	Server  string
+	BufSize int
 }
 
 type ProxyClient struct {
@@ -33,16 +34,6 @@ func (c *ProxyClient) ListenUDP() (net.PacketConn, error) {
 	if err != nil {
 		return nil, errors.Trace(err)
 	}
-	err = conn.SetWriteBuffer(1024 * 1024)
-	if err != nil {
-		conn.Close()
-		return nil, errors.Trace(err)
-	}
-	err = conn.SetReadBuffer(1024 * 1024)
-	if err != nil {
-		conn.Close()
-		return nil, errors.Trace(err)
-	}
 	handshake := protocol.Handshake{
 		Mode: protocol.ModeUDP,
 	}
@@ -51,5 +42,5 @@ func (c *ProxyClient) ListenUDP() (net.PacketConn, error) {
 		conn.Close()
 		return nil, errors.Trace(err)
 	}
-	return client.NewUDPConn(conn), nil
+	return client.NewUDPConn(conn, c.options.BufSize), nil
 }

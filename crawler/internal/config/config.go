@@ -25,6 +25,7 @@ type Config struct {
 	CheckExistBatchSize int    `json:",default=50"`
 	Socks5Proxy         string `json:",optional"`
 	Proxy               string `json:",optional"`
+	ProxyBufSize        int    `json:",default=4096"`
 }
 
 func (c *Config) MustSetUp() {
