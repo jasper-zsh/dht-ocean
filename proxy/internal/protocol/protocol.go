@@ -68,7 +68,7 @@ func (h *AddrHeader) ReadAddrPort(reader io.Reader) (addrPort netip.AddrPort, er
 	}
 	rawAddr := make([]byte, h.AddrLen)
 	var n int
-	n, err = reader.Read(rawAddr)
+	n, err = io.ReadFull(reader, rawAddr)
 	if err != nil {
 		err = errors.Trace(err)
 		return

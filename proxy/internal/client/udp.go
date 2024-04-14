@@ -3,9 +3,9 @@ package client
 import (
 	"bytes"
 	"dht-ocean/proxy/internal/protocol"
+	"io"
 	"net"
 	"net/netip"
-	"sync"
 	"time"
 
 	"github.com/juju/errors"
@@ -17,11 +17,9 @@ type UDPConn struct {
 	proxyConn net.Conn
 
 	readHeader protocol.UDPHeader
-	readLock   sync.Mutex
 
 	writeBuf    *bytes.Buffer
 	writeHeader protocol.UDPHeader
-	writeLock   sync.Mutex
 }
 
 func NewUDPConn(conn net.Conn) *UDPConn {
@@ -33,9 +31,6 @@ func NewUDPConn(conn net.Conn) *UDPConn {
 
 // ReadFrom implements net.PacketConn.
 func (u *UDPConn) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
-	// u.readLock.Lock()
-	// defer u.readLock.Unlock()
-
 	var addrPort netip.AddrPort
 	addrPort, err = u.readHeader.ReadFrom(u.proxyConn)
 	if err != nil {
@@ -44,21 +39,16 @@ func (u *UDPConn) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
 	}
 	addr = net.UDPAddrFromAddrPort(addrPort)
 
-	buf := make([]byte, u.readHeader.Length)
-	n, err = u.proxyConn.Read(buf)
+	n, err = io.ReadFull(u.proxyConn, p[:u.readHeader.Length])
 	if err != nil {
 		err = errors.Trace(err)
 		return
 	}
-	copy(p[:n], buf[:n])
 	return
 }
 
 // WriteTo implements net.PacketConn.
 func (u *UDPConn) WriteTo(p []byte, addr net.Addr) (n int, err error) {
-	// u.writeLock.Lock()
-	// defer u.writeLock.Unlock()
-
 	u.writeHeader.Length = uint32(len(p))
 	var addrPort netip.AddrPort
 	addrPort, err = netip.ParseAddrPort(addr.String())

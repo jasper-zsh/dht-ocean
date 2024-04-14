@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"dht-ocean/proxy/internal/protocol"
+	"io"
 	"net"
 
 	"github.com/zeromicro/go-zero/core/logx"
@@ -54,6 +55,7 @@ func (u *UDPHandler) close() {
 func (u *UDPHandler) send() {
 	hdr := protocol.UDPHeader{}
 	var n int
+	readBuf := make([]byte, 4096)
 	for {
 		addrPort, err := hdr.ReadFrom(u.clientConn)
 		if err != nil {
@@ -61,8 +63,11 @@ func (u *UDPHandler) send() {
 			u.cancel()
 			return
 		}
-		buf := make([]byte, hdr.Length)
-		n, err = u.clientConn.Read(buf)
+		if int(hdr.Length) > len(readBuf) {
+			logx.Infof("read buf size %d smaller than packet size %d, extend", len(readBuf), hdr.Length)
+			readBuf = make([]byte, 2*len(readBuf))
+		}
+		n, err = io.ReadFull(u.clientConn, readBuf[:hdr.Length])
 		if err != nil {
 			logx.Errorf("Failed to read data from client: %+v", err)
 			u.cancel()
@@ -73,7 +78,7 @@ func (u *UDPHandler) send() {
 			u.cancel()
 			return
 		}
-		_, err = u.localConn.WriteToUDPAddrPort(buf[:n], addrPort)
+		_, err = u.localConn.WriteToUDPAddrPort(readBuf[:n], addrPort)
 		if err != nil {
 			logx.Errorf("Failed to write to udp: %+v", err)
 			u.cancel()

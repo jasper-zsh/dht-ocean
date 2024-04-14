@@ -4,6 +4,7 @@ import (
 	"dht-ocean/proxy/internal/client"
 	"dht-ocean/proxy/internal/protocol"
 	"net"
+	"net/netip"
 
 	"github.com/juju/errors"
 )
@@ -24,8 +25,22 @@ func NewProxyClient(options ProxyClientOptions) (ret *ProxyClient) {
 }
 
 func (c *ProxyClient) ListenUDP() (net.PacketConn, error) {
-	conn, err := net.Dial("tcp", c.options.Server)
+	addr, err := netip.ParseAddrPort(c.options.Server)
 	if err != nil {
+		return nil, errors.Trace(err)
+	}
+	conn, err := net.DialTCP("tcp", nil, net.TCPAddrFromAddrPort(addr))
+	if err != nil {
+		return nil, errors.Trace(err)
+	}
+	err = conn.SetWriteBuffer(1024 * 1024)
+	if err != nil {
+		conn.Close()
+		return nil, errors.Trace(err)
+	}
+	err = conn.SetReadBuffer(1024 * 1024)
+	if err != nil {
+		conn.Close()
 		return nil, errors.Trace(err)
 	}
 	handshake := protocol.Handshake{
