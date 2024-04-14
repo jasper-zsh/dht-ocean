@@ -20,3 +20,4 @@ ForceQuitSeconds: 20
 CheckExistBatchSize: 50
 MaxSeenNodeSize: 2048576
 SeenNodeTTL: 300
+ProxyBufSize: 4096

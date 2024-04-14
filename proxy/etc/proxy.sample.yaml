@@ -1,2 +1,3 @@
 Name: proxy
 Listen: 43210
+BufferSize: 4096
