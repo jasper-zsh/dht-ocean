@@ -1,132 +1,190 @@
 package tracker
 
 import (
+	"bytes"
+	"context"
+	"dht-ocean/common/util"
 	"encoding/binary"
-	"fmt"
+	"io"
 	"math/rand"
 	"net"
-	"time"
-)
 
-const (
-	protocolID    uint64 = 0x41727101980
-	actionConnect uint32 = 0
-	actionScrape  uint32 = 2
-	actionError   uint32 = 3
+	"github.com/juju/errors"
+	"github.com/zeromicro/go-zero/core/logx"
 )
 
 var _ Tracker = (*UDPTracker)(nil)
 
 type UDPTracker struct {
-	addr         *net.UDPAddr
+	addr         string
 	conn         *net.UDPConn
+	connected    chan struct{}
 	connectionID uint64
+
+	scrapeQueue *util.LRWCache[uint32, [][]byte]
+
+	result chan []*ScrapeResult
 }
 
-func NewUDPTracker(addr string) (*UDPTracker, error) {
-	a, err := net.ResolveUDPAddr("udp", addr)
-	if err != nil {
-		return nil, err
+// Result implements Tracker.
+func (t *UDPTracker) Result() chan []*ScrapeResult {
+	return t.result
+}
+
+// ScrapeAsync implements Tracker.
+func (t *UDPTracker) Scrape(infoHashes [][]byte) error {
+	if t.connectionID == 0 {
+		<-t.connected
 	}
+	writer := bytes.NewBuffer(make([]byte, 0, 16+20*len(infoHashes)))
+	reqHdr := TrackerRequestHeader{
+		ConnectionID:  t.connectionID,
+		Action:        ActionScrape,
+		TransactionID: rand.Uint32(),
+	}
+	err := binary.Write(writer, binary.BigEndian, reqHdr)
+	if err != nil {
+		return errors.Trace(err)
+	}
+	for _, infoHash := range infoHashes {
+		_, err = writer.Write(infoHash[:20])
+		if err != nil {
+			return errors.Trace(err)
+		}
+	}
+	t.scrapeQueue.Set(reqHdr.TransactionID, infoHashes)
+	_, err = t.conn.Write(writer.Bytes())
+	if err != nil {
+		return errors.Trace(err)
+	}
+	return nil
+}
+
+func NewUDPTracker(ctx context.Context, addr string) (*UDPTracker, error) {
 	t := &UDPTracker{
-		addr: a,
+		addr:        addr,
+		connected:   make(chan struct{}),
+		scrapeQueue: util.NewLRWCache[uint32, [][]byte](ctx, 10, 50, true),
+		result:      make(chan []*ScrapeResult),
 	}
 	return t, nil
 }
 
-func (t *UDPTracker) Start() {
-	c, err := net.DialUDP("udp", nil, t.addr)
+func (t *UDPTracker) Start() error {
+	if t.conn != nil {
+		return nil
+	}
+	addr, err := net.ResolveUDPAddr("udp", t.addr)
 	if err != nil {
-		panic(err)
+		return errors.Trace(err)
+	}
+	c, err := net.DialUDP("udp", nil, addr)
+	if err != nil {
+		return errors.Trace(err)
 	}
 	t.conn = c
-	err = t.connect()
-	if err != nil {
-		panic(err)
+	if t.connectionID == 0 {
+		err = t.sendConnect()
+		if err != nil {
+			return errors.Trace(err)
+		}
 	}
+	go t.receive()
+	return nil
 }
 
 func (t *UDPTracker) Stop() {
 	if t.conn != nil {
-		err := t.conn.Close()
-		if err != nil {
-			panic(err)
-		}
+		t.conn.Close()
 		t.conn = nil
 	}
 }
 
-func (t *UDPTracker) connect() error {
-	buf := make([]byte, 16)
-	tid := rand.Uint32()
-	binary.BigEndian.PutUint64(buf, protocolID)
-	binary.BigEndian.PutUint32(buf[8:], actionConnect)
-	binary.BigEndian.PutUint32(buf[12:], tid)
-	_, err := t.conn.Write(buf)
+func (t *UDPTracker) disconnect() {
+	if t.conn != nil {
+		t.conn.Close()
+		t.conn = nil
+	}
+}
+
+func (t *UDPTracker) receive() {
+	hdr := TrackerResponseHeader{}
+	// Largest scrape response is 16 + 20*n (max n is 74)
+	// 2048 is enough
+	buf := make([]byte, 2048)
+	for {
+		n, _, err := t.conn.ReadFrom(buf)
+		if err != nil {
+			logx.Errorf("failed to read: %+v", err)
+			t.disconnect()
+			return
+		}
+		reader := bytes.NewReader(buf[:n])
+		err = binary.Read(reader, binary.BigEndian, &hdr)
+		if err != nil {
+			logx.Errorf("failed to parse header: %+v", err)
+			t.disconnect()
+			return
+		}
+		switch hdr.Action {
+		case ActionConnect:
+			err = t.handleConnect(reader)
+		case ActionScrape:
+			err = t.handleScrape(reader, &hdr)
+		default:
+			err = errors.Errorf("unknown action: %d", hdr.Action)
+		}
+		if err != nil {
+			t.disconnect()
+			return
+		}
+	}
+}
+
+func (t *UDPTracker) handleConnect(reader io.Reader) error {
+	resp := ConnectResponse{}
+	err := binary.Read(reader, binary.BigEndian, &resp)
 	if err != nil {
-		return err
+		return errors.Trace(err)
 	}
-	resp, err := t.readUntilTid(tid, time.Second*10)
-	if err != nil {
-		return err
+	t.connectionID = resp.ConnectionID
+	logx.Infof("Connected: %d", resp.ConnectionID)
+	if len(t.connected) == 0 {
+		t.connected <- struct{}{}
 	}
-	if binary.BigEndian.Uint32(resp[0:]) != 0 {
-		return fmt.Errorf("illegal connect response")
-	}
-	t.connectionID = binary.BigEndian.Uint64(resp[8:])
 	return nil
 }
 
-func (t *UDPTracker) readUntilTid(tid uint32, timeout time.Duration) ([]byte, error) {
-	timeoutAt := time.Now().Add(timeout)
-	_ = t.conn.SetReadDeadline(timeoutAt)
-
-	buf := make([]byte, 4096)
-	for {
-		bytes, _, err := t.conn.ReadFromUDP(buf)
-		if err != nil {
-			return nil, err
-		}
-		if binary.BigEndian.Uint32(buf[4:]) == tid {
-			return buf[:bytes], nil
-		}
-		if timeoutAt.Before(time.Now()) {
-			return nil, fmt.Errorf("timeout")
-		}
+func (t *UDPTracker) sendConnect() error {
+	req := ConnectRequest{
+		ProtocolID:    ProtocolID,
+		Action:        ActionConnect,
+		TransactionID: rand.Uint32(),
 	}
+	err := binary.Write(t.conn, binary.BigEndian, req)
+	if err != nil {
+		return errors.Trace(err)
+	}
+	return nil
 }
 
-func (t *UDPTracker) Scrape(infoHashes [][]byte) ([]*ScrapeResponse, error) {
-	buf := make([]byte, 16+20*len(infoHashes))
-	tid := rand.Uint32()
-	binary.BigEndian.PutUint64(buf, t.connectionID)
-	binary.BigEndian.PutUint32(buf[8:], actionScrape)
-	binary.BigEndian.PutUint32(buf[12:], tid)
-	for i, infoHash := range infoHashes {
-		copy(buf[16+20*i:], infoHash[:20])
+func (t *UDPTracker) handleScrape(reader io.Reader, hdr *TrackerResponseHeader) error {
+	infoHashes, ok := t.scrapeQueue.GetAndRemove(hdr.TransactionID)
+	if !ok {
+		logx.Infof("transaction %d lost", hdr.TransactionID)
+		return nil
 	}
-	_, err := t.conn.Write(buf)
-	if err != nil {
-		return nil, err
+	results := make([]*ScrapeResult, 0, len(infoHashes))
+	for _, infoHash := range infoHashes {
+		r := ScrapeResult{
+			InfoHash: infoHash,
+		}
+		err := binary.Read(reader, binary.BigEndian, &r.ScrapeResponse)
+		if err != nil {
+			return errors.Trace(err)
+		}
+		results = append(results, &r)
 	}
-	resp, err := t.readUntilTid(tid, time.Second*10)
-	if err != nil {
-		return nil, err
-	}
-	if binary.BigEndian.Uint32(resp) == actionError {
-		return nil, fmt.Errorf("error resp: %s", resp[8:])
-	}
-	if binary.BigEndian.Uint32(resp) != actionScrape {
-		return nil, fmt.Errorf("illegal scrape response")
-	}
-	respCount := (len(resp) - 8) / 12
-	resps := make([]*ScrapeResponse, respCount)
-	for i := 0; i < respCount; i++ {
-		r := &ScrapeResponse{}
-		r.Seeders = binary.BigEndian.Uint32(resp[8+12*i:])
-		r.Completed = binary.BigEndian.Uint32(resp[12+12*i:])
-		r.Leechers = binary.BigEndian.Uint32(resp[16+12*i:])
-		resps[i] = r
-	}
-	return resps, nil
+	t.result <- results
+	return nil
 }

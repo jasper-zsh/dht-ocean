@@ -1,4 +1,4 @@
-package utils
+package util
 
 import (
 	"context"
@@ -9,7 +9,7 @@ import (
 )
 
 func TestLRWCache(t *testing.T) {
-	c := NewLRWCache[string, struct{}](context.Background(), 5, 100)
+	c := NewLRWCache[string, struct{}](context.Background(), 5, 100, false)
 	c.Set("foo", struct{}{})
 	_, ok := c.Get("foo")
 	assert.True(t, ok)

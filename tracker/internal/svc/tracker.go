@@ -10,26 +10,63 @@ import (
 )
 
 type TrackerUpdater struct {
+	ctx          context.Context
+	cancel       context.CancelFunc
 	svcCtx       *ServiceContext
 	trackerLimit int64
 }
 
-func NewTrackerUpdater(svcCtx *ServiceContext, limit int64) *TrackerUpdater {
+func NewTrackerUpdater(ctx context.Context, svcCtx *ServiceContext, limit int64) *TrackerUpdater {
 	r := &TrackerUpdater{
 		svcCtx:       svcCtx,
 		trackerLimit: limit,
 	}
+	r.ctx, r.cancel = context.WithCancel(ctx)
 	return r
 }
 
 func (u *TrackerUpdater) Start() {
-	for {
-		u.refreshTracker()
-	}
+	go u.handleResult()
+	u.fetch()
 }
 
 func (u *TrackerUpdater) Stop() {
+	u.cancel()
+}
 
+func (u *TrackerUpdater) fetch() {
+	for {
+		select {
+		case <-u.ctx.Done():
+			return
+		default:
+			u.refreshTracker()
+		}
+	}
+}
+
+func (u *TrackerUpdater) handleResult() {
+	for {
+		select {
+		case <-u.ctx.Done():
+			return
+		case result := <-u.svcCtx.Tracker.Result():
+			reqs := make([]*oceanclient.UpdateTrackerRequest, 0, len(result))
+			for _, r := range result {
+				reqs = append(reqs, &oceanclient.UpdateTrackerRequest{
+					InfoHash: hex.EncodeToString(r.InfoHash),
+					Seeders:  r.Seeders,
+					Leechers: r.Leechers,
+				})
+			}
+			_, err := u.svcCtx.OceanRpc.BatchUpdateTracker(context.Background(), &oceanclient.BatchUpdateTrackerRequest{
+				Requests: reqs,
+			})
+			if err != nil {
+				logx.Errorf("Failed to update tracker: %+v", err)
+			}
+		}
+	}
 }
 
 func (u *TrackerUpdater) refreshTracker() {
@@ -50,23 +87,9 @@ func (u *TrackerUpdater) refreshTracker() {
 		}
 		hashes = append(hashes, hash)
 	}
-	scrapes, err := u.svcCtx.Tracker.Scrape(hashes)
+	err = u.svcCtx.Tracker.Scrape(hashes)
 	if err != nil {
 		logrus.Warnf("Failed to scrape %d torrents from tracker. %v", len(hashes), err)
 		return
-	}
-	reqs := make([]*oceanclient.UpdateTrackerRequest, 0, len(scrapes))
-	for i, r := range scrapes {
-		reqs = append(reqs, &oceanclient.UpdateTrackerRequest{
-			InfoHash: res.InfoHashes[i],
-			Seeders:  r.Seeders,
-			Leechers: r.Leechers,
-		})
-		_, err := u.svcCtx.OceanRpc.BatchUpdateTracker(context.Background(), &oceanclient.BatchUpdateTrackerRequest{
-			Requests: reqs,
-		})
-		if err != nil {
-			logx.Errorf("Failed to update tracker for %s", res.InfoHashes[i])
-		}
 	}
 }

@@ -5,7 +5,7 @@ import (
 	"context"
 	"dht-ocean/common/bencode"
 	"dht-ocean/common/dht"
-	"dht-ocean/crawler/internal/utils"
+	"dht-ocean/common/util"
 	"dht-ocean/proxy"
 	"encoding/hex"
 	"fmt"
@@ -79,7 +79,7 @@ type Crawler struct {
 	nodeID          []byte
 	bootstrapNodes  []*dht.Node
 	neighbours      chan *dht.Node
-	seenNodes       *utils.LRWCache[string, struct{}]
+	seenNodes       *util.LRWCache[string, struct{}]
 	findNodeLimiter *rate.Limiter
 	ticker          *time.Ticker
 	tm              *dht.TransactionManager
@@ -132,7 +132,7 @@ func NewCrawler(svcCtx *ServiceContext) (*Crawler, error) {
 	}
 	c.SetBootstrapNodes(svcCtx.Config.BootstrapNodes)
 	c.ctx, c.cancel = context.WithCancel(context.Background())
-	c.seenNodes = utils.NewLRWCache[string, struct{}](c.ctx, svcCtx.Config.SeenNodeTTL, svcCtx.Config.MaxSeenNodeSize)
+	c.seenNodes = util.NewLRWCache[string, struct{}](c.ctx, svcCtx.Config.SeenNodeTTL, svcCtx.Config.MaxSeenNodeSize, false)
 
 	c.findNodeLimiter = rate.NewLimiter(rate.Limit(c.svcCtx.Config.FindNodeRateLimit), c.svcCtx.Config.FindNodeRateLimit)
 	return c, nil
@@ -307,6 +307,19 @@ func (c *Crawler) loop() {
 }
 
 func (c *Crawler) sendPacket(pkt *dht.Packet, addr net.Addr) error {
+	addrPort, err := netip.ParseAddrPort(addr.String())
+	if err != nil {
+		logx.Errorf("[sendPacket] Failed to parse addr: %+v", err)
+		return errors.Trace(err)
+	}
+	if addrPort.Port() == 0 {
+		logx.Errorf("[sendPacket] Illegal addr: %s", addr.String())
+		return errors.New("invalid addr")
+	}
+	if !addrPort.IsValid() {
+		logx.Errorf("[sendPacket] Illegal addr: %s", addr.String())
+		return errors.New("invalid addr")
+	}
 	encoded, err := pkt.Encode()
 	if err != nil {
 		logx.Errorf("Failed to encode packet: %s, %v", pkt, err)

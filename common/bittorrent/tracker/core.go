@@ -1,13 +1,13 @@
 package tracker
 
-type ScrapeResponse struct {
-	Seeders   uint32
-	Completed uint32
-	Leechers  uint32
+type ScrapeResult struct {
+	InfoHash []byte
+	ScrapeResponse
 }
 
 type Tracker interface {
-	Scrape(infoHashes [][]byte) ([]*ScrapeResponse, error)
-	Start()
+	Scrape(infoHashes [][]byte) error
+	Start() error
 	Stop()
+	Result() chan []*ScrapeResult
 }

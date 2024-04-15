@@ -30,6 +30,15 @@
             "program": "${workspaceFolder}/proxy/cmd",
             "cwd": "${workspaceFolder}/proxy",
             "args": ["-f", "etc/proxy.yaml"]
+        },
+        {
+            "name": "Run tracker",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "${workspaceFolder}/tracker",
+            "cwd": "${workspaceFolder}/tracker",
+            "args": ["-f", "etc/tracker.yaml"]
         }
     ]
 }
