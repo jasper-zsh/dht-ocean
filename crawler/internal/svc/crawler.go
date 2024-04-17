@@ -186,6 +186,7 @@ func (c *Crawler) bootstrap() {
 			metricQueueSize.Set(float64(len(c.rawPackets)), "incoming_packets")
 			metricQueueSize.Set(float64(len(c.decodedPackets)), "decoded_packets")
 			metricQueueSize.Set(float64(len(c.outPackets)), "outgoing_packets")
+			metricQueueSize.Set(float64(c.svcCtx.TorrentFetcher.executor.QueueSize()), "torrent_fetcher")
 			if len(c.neighbours) == 0 {
 				counter += 1
 				if counter%30 == 0 {
