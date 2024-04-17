@@ -250,7 +250,7 @@ func (c *Crawler) _connect() error {
 			return errors.Trace(err)
 		}
 	}
-	go c.listen()
+	go c.listen(c.conn)
 	return nil
 }
 
@@ -269,15 +269,11 @@ func (c *Crawler) Stop() {
 	c.cancel()
 }
 
-func (c *Crawler) listen() {
+func (c *Crawler) listen(conn net.PacketConn) {
 	logx.Info("Connection established, start listening")
 	buf := make([]byte, 65536)
 	for {
-		if c.conn == nil {
-			logx.Info("Connection closed, stop listening")
-			return
-		}
-		transfered, addr, err := c.conn.ReadFrom(buf)
+		transfered, addr, err := conn.ReadFrom(buf)
 		if err != nil {
 			logx.Errorf("Connection broken: %+v", err)
 			c.disconnect()
