@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"context"
 	"dht-ocean/proxy/internal/protocol"
+	"encoding/binary"
+	"fmt"
 	"io"
 	"net"
 
@@ -35,8 +37,18 @@ func NewUDPHandler(ctx context.Context, conn net.Conn, bufSize int) (ret *UDPHan
 }
 
 func (u *UDPHandler) Run() {
-	var err error
-	u.localConn, err = net.ListenUDP("udp", nil)
+	handshake := protocol.UDPHandshake{}
+	err := binary.Read(u.clientConn, binary.BigEndian, &handshake)
+	if err != nil {
+		logx.Errorf("UDP handshake failed: %+v", err)
+		u.close()
+		return
+	}
+	var laddr *net.UDPAddr
+	if handshake.Port > 0 {
+		laddr, _ = net.ResolveUDPAddr("udp", fmt.Sprintf(":%d", handshake.Port))
+	}
+	u.localConn, err = net.ListenUDP("udp", laddr)
 	if err != nil {
 		logx.Errorf("Failed to run udp handler: %+v", err)
 		u.close()

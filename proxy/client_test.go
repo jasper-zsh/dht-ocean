@@ -36,7 +36,7 @@ func TestBasic(t *testing.T) {
 	if !assert.NoError(t, err) {
 		return
 	}
-	c, err := proxyClient.ListenUDP()
+	c, err := proxyClient.ListenUDP(0)
 	if !assert.NoError(t, err) {
 		return
 	}

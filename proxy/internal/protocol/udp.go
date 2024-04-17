@@ -44,3 +44,7 @@ func (h *UDPHeader) ReadFrom(reader io.Reader) (addrPort netip.AddrPort, err err
 	}
 	return
 }
+
+type UDPHandshake struct {
+	Port uint16
+}

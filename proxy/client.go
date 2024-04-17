@@ -25,7 +25,7 @@ func NewProxyClient(options ProxyClientOptions) (ret *ProxyClient) {
 	return
 }
 
-func (c *ProxyClient) ListenUDP() (net.PacketConn, error) {
+func (c *ProxyClient) ListenUDP(lport uint16) (net.PacketConn, error) {
 	addr, err := netip.ParseAddrPort(c.options.Server)
 	if err != nil {
 		return nil, errors.Trace(err)
@@ -42,5 +42,9 @@ func (c *ProxyClient) ListenUDP() (net.PacketConn, error) {
 		conn.Close()
 		return nil, errors.Trace(err)
 	}
-	return client.NewUDPConn(conn, c.options.BufSize), nil
+	udpConn, err := client.NewUDPConn(conn, lport, c.options.BufSize)
+	if err != nil {
+		return nil, errors.Trace(err)
+	}
+	return udpConn, nil
 }

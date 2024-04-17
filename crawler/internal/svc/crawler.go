@@ -238,7 +238,7 @@ func (c *Crawler) _connect() error {
 			Server:  c.proxy,
 			BufSize: c.svcCtx.Config.ProxyBufSize,
 		})
-		c.conn, err = proxy.ListenUDP()
+		c.conn, err = proxy.ListenUDP(c.addr.AddrPort().Port())
 		if err != nil {
 			logx.Errorf("Failed to listen udp via proxy. %+v", err)
 			return errors.Trace(err)
@@ -270,8 +270,13 @@ func (c *Crawler) Stop() {
 }
 
 func (c *Crawler) listen() {
+	logx.Info("Connection established, start listening")
 	buf := make([]byte, 65536)
 	for {
+		if c.conn == nil {
+			logx.Info("Connection closed, stop listening")
+			return
+		}
 		transfered, addr, err := c.conn.ReadFrom(buf)
 		if err != nil {
 			logx.Errorf("Connection broken: %+v", err)

@@ -3,45 +3,60 @@ package client
 import (
 	"bufio"
 	"dht-ocean/proxy/internal/protocol"
+	"encoding/binary"
 	"io"
 	"net"
 	"net/netip"
 	"time"
 
 	"github.com/juju/errors"
+	"github.com/zeromicro/go-zero/core/logx"
 )
 
 var _ net.PacketConn = (*UDPConn)(nil)
 
 type UDPConn struct {
 	proxyConn net.Conn
-	buffered  io.ReadWriter
+	reader    *bufio.Reader
+	writer    *bufio.Writer
 
 	readHeader  protocol.UDPHeader
 	writeHeader protocol.UDPHeader
 }
 
-func NewUDPConn(conn net.Conn, bufSize int) *UDPConn {
-	return &UDPConn{
+func NewUDPConn(conn net.Conn, lport uint16, bufSize int) (*UDPConn, error) {
+	ret := &UDPConn{
 		proxyConn: conn,
-		buffered: bufio.NewReadWriter(
-			bufio.NewReaderSize(conn, bufSize),
-			bufio.NewWriterSize(conn, bufSize),
-		),
+		reader:    bufio.NewReaderSize(conn, bufSize),
+		writer:    bufio.NewWriterSize(conn, bufSize),
 	}
+	handshake := protocol.UDPHandshake{
+		Port: lport,
+	}
+	err := binary.Write(conn, binary.BigEndian, &handshake)
+	if err != nil {
+		conn.Close()
+		return nil, errors.Trace(err)
+	}
+	return ret, nil
 }
 
 // ReadFrom implements net.PacketConn.
 func (u *UDPConn) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
 	var addrPort netip.AddrPort
-	addrPort, err = u.readHeader.ReadFrom(u.buffered)
+	addrPort, err = u.readHeader.ReadFrom(u.reader)
 	if err != nil {
 		err = errors.Trace(err)
 		return
 	}
 	addr = net.UDPAddrFromAddrPort(addrPort)
 
-	n, err = io.ReadFull(u.buffered, p[:u.readHeader.Length])
+	if u.reader.Size() < int(u.readHeader.Length) {
+		newSize := u.reader.Size() * 2
+		logx.Infof("reader size not big enough, expand to %d", newSize)
+		u.reader = bufio.NewReaderSize(u.reader, newSize)
+	}
+	n, err = io.ReadFull(u.reader, p[:u.readHeader.Length])
 	if err != nil {
 		err = errors.Trace(err)
 		return
@@ -64,12 +79,12 @@ func (u *UDPConn) WriteTo(p []byte, addr net.Addr) (n int, err error) {
 		err = errors.Trace(err)
 		return
 	}
-	err = u.writeHeader.WriteTo(u.buffered, rawAddr)
+	err = u.writeHeader.WriteTo(u.writer, rawAddr)
 	if err != nil {
 		err = errors.Trace(err)
 		return
 	}
-	n, err = u.buffered.Write(p)
+	n, err = u.writer.Write(p)
 	if err != nil {
 		err = errors.Trace(err)
 		return
