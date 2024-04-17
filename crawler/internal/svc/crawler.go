@@ -319,7 +319,6 @@ func (c *Crawler) decodeLoop() {
 				continue
 			}
 			c.decodedPackets <- pkt
-			c.onMessage(pkt, pkt.Addr)
 		}
 	}
 }
