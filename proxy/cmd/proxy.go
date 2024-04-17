@@ -21,7 +21,9 @@ func main() {
 
 	g := service.NewServiceGroup()
 	g.Add(internal.NewProxyServer(internal.ProxyServerOptions{
-		Listen: c.Listen,
+		Listen:       c.Listen,
+		SocketBuffer: c.SocketBuffer,
+		BufferSize:   c.BufferSize,
 	}))
 	defer g.Stop()
 

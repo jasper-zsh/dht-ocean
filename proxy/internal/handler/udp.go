@@ -15,8 +15,9 @@ import (
 var _ Handler = (*UDPHandler)(nil)
 
 type UDPHandler struct {
-	clientConn net.Conn
-	localConn  *net.UDPConn
+	clientConn   net.Conn
+	localConn    *net.UDPConn
+	socketBuffer int
 
 	buffered io.ReadWriter
 
@@ -24,9 +25,10 @@ type UDPHandler struct {
 	cancel context.CancelFunc
 }
 
-func NewUDPHandler(ctx context.Context, conn net.Conn, bufSize int) (ret *UDPHandler) {
+func NewUDPHandler(ctx context.Context, conn net.Conn, socketBuffer int, bufSize int) (ret *UDPHandler) {
 	ret = &UDPHandler{
-		clientConn: conn,
+		clientConn:   conn,
+		socketBuffer: socketBuffer * 1024,
 		buffered: bufio.NewReadWriter(
 			bufio.NewReaderSize(conn, bufSize),
 			bufio.NewWriterSize(conn, bufSize),
@@ -51,6 +53,18 @@ func (u *UDPHandler) Run() {
 	u.localConn, err = net.ListenUDP("udp", laddr)
 	if err != nil {
 		logx.Errorf("Failed to run udp handler: %+v", err)
+		u.close()
+		return
+	}
+	err = u.localConn.SetReadBuffer(u.socketBuffer)
+	if err != nil {
+		logx.Errorf("Failed to set read buffer: %+v", err)
+		u.close()
+		return
+	}
+	err = u.localConn.SetWriteBuffer(u.socketBuffer)
+	if err != nil {
+		logx.Errorf("Failed to set write buffer: %+v", err)
 		u.close()
 		return
 	}

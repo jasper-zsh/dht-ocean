@@ -1,3 +1,4 @@
 Name: proxy
 Listen: 43210
-BufferSize: 4096
+BufferSize: 4096  # Bytes
+SocketBuffer: 8192  # KB
