@@ -28,6 +28,7 @@ type Config struct {
 	ProxyBufSize        int    `json:",default=4096"`
 	DecoderThreads      int    `json:",default=1"`
 	HandlerThreads      int    `json:",default=1"`
+	PacketQueueSize     int    `json:",default=2000"`
 }
 
 func (c *Config) MustSetUp() {
