@@ -69,6 +69,11 @@ func init() {
 
 type InfoHashFilter func(infoHash []byte) bool
 
+type outPacket struct {
+	data []byte
+	addr net.Addr
+}
+
 type Crawler struct {
 	ctx             context.Context
 	cancel          context.CancelFunc
@@ -83,7 +88,9 @@ type Crawler struct {
 	findNodeLimiter *rate.Limiter
 	ticker          *time.Ticker
 	tm              *dht.TransactionManager
-	packetBuffers   chan *dht.Packet
+	rawPackets      chan *dht.Packet
+	decodedPackets  chan *dht.Packet
+	outPackets      chan *outPacket
 	maxQueueSize    int
 	svcCtx          *ServiceContext
 
@@ -120,15 +127,17 @@ func NewCrawler(svcCtx *ServiceContext) (*Crawler, error) {
 	}
 
 	c := &Crawler{
-		socks5Proxy:   svcCtx.Config.Socks5Proxy,
-		proxy:         svcCtx.Config.Proxy,
-		addr:          addr,
-		nodeID:        nodeID,
-		tm:            &dht.TransactionManager{},
-		packetBuffers: make(chan *dht.Packet, 1000),
-		maxQueueSize:  svcCtx.Config.MaxQueueSize,
-		svcCtx:        svcCtx,
-		neighbours:    make(chan *dht.Node, svcCtx.Config.MaxQueueSize),
+		socks5Proxy:    svcCtx.Config.Socks5Proxy,
+		proxy:          svcCtx.Config.Proxy,
+		addr:           addr,
+		nodeID:         nodeID,
+		tm:             &dht.TransactionManager{},
+		rawPackets:     make(chan *dht.Packet, 1000),
+		decodedPackets: make(chan *dht.Packet, 1000),
+		outPackets:     make(chan *outPacket, 1000),
+		maxQueueSize:   svcCtx.Config.MaxQueueSize,
+		svcCtx:         svcCtx,
+		neighbours:     make(chan *dht.Node, svcCtx.Config.MaxQueueSize),
 	}
 	c.SetBootstrapNodes(svcCtx.Config.BootstrapNodes)
 	c.ctx, c.cancel = context.WithCancel(context.Background())
@@ -174,6 +183,9 @@ func (c *Crawler) bootstrap() {
 			return
 		case <-c.ticker.C:
 			metricQueueSize.Set(float64(len(c.neighbours)), "neighbours")
+			metricQueueSize.Set(float64(len(c.rawPackets)), "incoming_packets")
+			metricQueueSize.Set(float64(len(c.decodedPackets)), "decoded_packets")
+			metricQueueSize.Set(float64(len(c.outPackets)), "outgoing_packets")
 			if len(c.neighbours) == 0 {
 				counter += 1
 				if counter%30 == 0 {
@@ -196,8 +208,15 @@ func (c *Crawler) Start() {
 
 	c.ticker = time.NewTicker(time.Second)
 	routineGroup := threading.NewRoutineGroup()
-	routineGroup.RunSafe(c.loop)
-	routineGroup.RunSafe(c.bootstrap)
+	routineGroup.Run(c.bootstrap)
+	routineGroup.Run(c.sendLoop)
+	routineGroup.Run(c.neighbourLoop)
+	for i := 0; i < c.svcCtx.Config.DecoderThreads; i++ {
+		routineGroup.Run(c.decodeLoop)
+	}
+	for i := 0; i < c.svcCtx.Config.HandlerThreads; i++ {
+		routineGroup.Run(c.handlerLoop)
+	}
 	routineGroup.Wait()
 }
 
@@ -284,22 +303,80 @@ func (c *Crawler) listen(conn net.PacketConn) {
 		copy(msg, buf)
 		pkt := dht.NewPacketFromBuffer(msg)
 		pkt.Addr = addr
-		c.packetBuffers <- pkt
+		c.rawPackets <- pkt
 	}
 }
 
-func (c *Crawler) loop() {
+func (c *Crawler) decodeLoop() {
 	for {
 		select {
 		case <-c.ctx.Done():
 			return
-		case pkt := <-c.packetBuffers:
+		case pkt := <-c.rawPackets:
 			err := pkt.Decode()
 			if err != nil {
 				logx.Debugf("Failed to parse DHT packet. %s %v", pkt, err)
 				continue
 			}
+			c.decodedPackets <- pkt
 			c.onMessage(pkt, pkt.Addr)
+		}
+	}
+}
+
+func (c *Crawler) handlerLoop() {
+	for {
+		select {
+		case <-c.ctx.Done():
+			return
+		case pkt := <-c.decodedPackets:
+			c.onMessage(pkt, pkt.Addr)
+		}
+	}
+}
+
+func (c *Crawler) sendLoop() {
+	for {
+		select {
+		case <-c.ctx.Done():
+			return
+		case pkt := <-c.outPackets:
+			addrPort, err := netip.ParseAddrPort(pkt.addr.String())
+			if err != nil {
+				logx.Errorf("[sendLoop] Failed to parse addr: %+v", err)
+				continue
+			}
+			if addrPort.Port() == 0 {
+				logx.Errorf("[sendLoop] Illegal addr: %s", pkt.addr.String())
+				continue
+			}
+			if !addrPort.IsValid() {
+				logx.Errorf("[sendLoop] Illegal addr: %s", pkt.addr.String())
+				continue
+			}
+			if c.conn == nil {
+				err = c.connect()
+				if err != nil {
+					logx.Errorf("[sendLoop] connect failed: %+v", err)
+					continue
+				}
+			}
+			bytes, err := c.conn.WriteTo(pkt.data, pkt.addr)
+			if err != nil {
+				logx.Errorf("Failed to write to udp %s %v", pkt.addr, err)
+				c.disconnect()
+				continue
+			}
+			logx.Debugf("Send %d bytes to %s", bytes, pkt.addr)
+		}
+	}
+}
+
+func (c *Crawler) neighbourLoop() {
+	for {
+		select {
+		case <-c.ctx.Done():
+			return
 		case node := <-c.neighbours:
 			_ = c.findNodeLimiter.Wait(c.ctx)
 			c.sendFindNode(dht.GetNeighbourID(node.NodeID, c.nodeID), dht.GenerateNodeID(), node.Addr)
@@ -308,37 +385,16 @@ func (c *Crawler) loop() {
 }
 
 func (c *Crawler) sendPacket(pkt *dht.Packet, addr net.Addr) error {
-	addrPort, err := netip.ParseAddrPort(addr.String())
-	if err != nil {
-		logx.Errorf("[sendPacket] Failed to parse addr: %+v", err)
-		return errors.Trace(err)
-	}
-	if addrPort.Port() == 0 {
-		logx.Errorf("[sendPacket] Illegal addr: %s", addr.String())
-		return errors.New("invalid addr")
-	}
-	if !addrPort.IsValid() {
-		logx.Errorf("[sendPacket] Illegal addr: %s", addr.String())
-		return errors.New("invalid addr")
-	}
+	pkt.Addr = addr
 	encoded, err := pkt.Encode()
 	if err != nil {
 		logx.Errorf("Failed to encode packet: %s, %v", pkt, err)
 		return err
 	}
-	if c.conn == nil {
-		err = c.connect()
-		if err != nil {
-			return errors.Trace(err)
-		}
+	c.outPackets <- &outPacket{
+		data: []byte(encoded),
+		addr: addr,
 	}
-	bytes, err := c.conn.WriteTo([]byte(encoded), addr)
-	if err != nil {
-		logx.Errorf("Failed to write to udp %s %v", addr, err)
-		c.disconnect()
-		return err
-	}
-	logx.Debugf("Send %d bytes to %s", bytes, addr)
 	return nil
 }
 

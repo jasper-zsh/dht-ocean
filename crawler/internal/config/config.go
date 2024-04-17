@@ -26,6 +26,8 @@ type Config struct {
 	Socks5Proxy         string `json:",optional"`
 	Proxy               string `json:",optional"`
 	ProxyBufSize        int    `json:",default=4096"`
+	DecoderThreads      int    `json:",default=1"`
+	HandlerThreads      int    `json:",default=1"`
 }
 
 func (c *Config) MustSetUp() {
