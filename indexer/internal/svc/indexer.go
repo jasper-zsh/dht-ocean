@@ -96,6 +96,7 @@ func (i *Indexer) stats() {
 }
 
 func (i *Indexer) Start() {
+	go i.stats()
 	for {
 		select {
 		case <-i.ctx.Done():

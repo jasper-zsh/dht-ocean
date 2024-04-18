@@ -29,7 +29,7 @@ pipeline {
               """
             }
           }
-          def services = ["deployment/crawler", "deployment/ocean", "deployment/tracker", "statefulset/proxy"]
+          def services = ["deployment/crawler", "deployment/ocean", "deployment/tracker", "deployment/indexer", "statefulset/proxy"]
           
           deployTasks = [:]
           services.each() {

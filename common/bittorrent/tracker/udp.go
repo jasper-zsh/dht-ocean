@@ -52,6 +52,10 @@ func (t *UDPTracker) Scrape(infoHashes [][]byte) error {
 			return errors.Trace(err)
 		}
 	}
+	if t.conn == nil {
+		logx.Errorf("nil connection")
+		return errors.New("nil connection")
+	}
 	t.scrapeQueue.Set(reqHdr.TransactionID, infoHashes)
 	_, err = t.conn.Write(writer.Bytes())
 	if err != nil {
