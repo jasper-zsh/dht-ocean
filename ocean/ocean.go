@@ -2,8 +2,8 @@ package main
 
 import (
 	"context"
+	"dht-ocean/common/model"
 	"dht-ocean/common/util"
-	"dht-ocean/ocean/internal/model"
 	"encoding/hex"
 	"flag"
 	"fmt"
@@ -94,7 +94,6 @@ func main() {
 			reflection.Register(grpcServer)
 		}
 	}))
-	group.Add(svcCtx.Indexer)
 
 	stats := svc.NewStats(svcCtx)
 	group.Add(stats)

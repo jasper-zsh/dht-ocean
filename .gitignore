@@ -6,4 +6,5 @@ transfer.yaml
 /ocean/etc/ocean.yaml
 /tracker/etc/tracker.yaml
 /proxy/etc/proxy.yaml
+/indexer/etc/indexer.yaml
 __debug_bin*

@@ -3,8 +3,8 @@ package main
 import (
 	"context"
 	"dht-ocean/common/model"
-	config "dht-ocean/tracker/internal/config"
-	"dht-ocean/tracker/internal/svc"
+	"dht-ocean/indexer/internal/config"
+	"dht-ocean/indexer/internal/svc"
 	"flag"
 	"os"
 	"os/signal"
@@ -14,7 +14,7 @@ import (
 	"github.com/zeromicro/go-zero/core/service"
 )
 
-var configFile = flag.String("f", "etc/tracker.yaml", "the config file")
+var configFile = flag.String("f", "etc/indexer.yaml", "the config file")
 
 func main() {
 	flag.Parse()
@@ -29,17 +29,18 @@ func main() {
 		panic(err)
 	}
 
-	ctx, _ := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
-	svcCtx := svc.NewServiceContext(ctx, c)
-	err = svcCtx.Tracker.Start()
+	ctx, _ := signal.NotifyContext(context.TODO(), os.Interrupt, os.Kill)
+	indexer, err := svc.NewIndexer(ctx, &c)
 	if err != nil {
+		logx.Errorf("Failed to initialize indexer: %+v", err)
 		panic(err)
 	}
 
 	group := service.NewServiceGroup()
-	group.Add(svcCtx.Updater)
 	defer group.Stop()
 
-	logx.Infof("Starting tracker...")
+	group.Add(indexer)
+
+	logx.Info("Starting indexer...")
 	group.Start()
 }

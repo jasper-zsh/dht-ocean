@@ -2,8 +2,9 @@ package svc
 
 import (
 	"context"
-	"github.com/zeromicro/go-zero/core/logx"
 	"time"
+
+	"github.com/zeromicro/go-zero/core/logx"
 )
 
 type Stats struct {
@@ -39,12 +40,6 @@ func (s *Stats) stats() {
 		logx.Errorf("Failed to count torrents. %v", err)
 	} else {
 		s.svcCtx.TorrentCountGauge.Set(float64(cnt), "total")
-	}
-	cnt, err = s.svcCtx.Indexer.CountTorrents()
-	if err != nil {
-		logx.Errorf("Failed to count indexed torrents. %v", err)
-	} else {
-		s.svcCtx.TorrentCountGauge.Set(float64(cnt), "indexed")
 	}
 }
 

@@ -16,11 +16,13 @@ COPY crawler/etc /app/etc
 COPY ocean/etc /app/etc
 COPY proxy/etc /app/etc
 COPY tracker/etc /app/etc
+COPY indexer/etc /app/etc
 
 RUN go build -ldflags="-s -w" -o /app/crawler crawler/crawler.go && \
     go build -ldflags="-s -w" -o /app/ocean ocean/ocean.go && \
     go build -ldflags="-s -w" -o /app/proxy proxy/cmd/proxy.go && \
-    go build -ldflags="-s -w" -o /app/tracker tracker/tracker.go
+    go build -ldflags="-s -w" -o /app/tracker tracker/tracker.go && \
+    go build -ldflags="-s -w" -o /app/indexer indexer/indexer.go
 
 FROM --platform=linux/amd64 alpine
 

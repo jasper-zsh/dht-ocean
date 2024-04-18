@@ -6,7 +6,7 @@ import (
 
 type Config struct {
 	service.ServiceConf
-	Mongo        string
-	Tracker      string
-	TrackerLimit int64
+	Mongo         string
+	ElasticSearch string
+	BatchSize     int64
 }

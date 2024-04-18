@@ -2,14 +2,15 @@ package svc
 
 import (
 	"context"
-	"dht-ocean/ocean/internal/model"
+	"dht-ocean/common/model"
 	"dht-ocean/ocean/ocean"
+	"sync"
+	"time"
+
 	"github.com/kamva/mgm/v3"
 	"github.com/kamva/mgm/v3/operator"
 	"github.com/zeromicro/go-zero/core/logx"
 	"go.mongodb.org/mongo-driver/bson"
-	"sync"
-	"time"
 )
 
 func UpdateTracker(ctx context.Context, svcCtx *ServiceContext, in *ocean.UpdateTrackerRequest) error {

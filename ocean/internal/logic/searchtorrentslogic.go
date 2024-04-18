@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 
-	"dht-ocean/ocean/internal/model"
+	"dht-ocean/common/model"
 	"dht-ocean/ocean/internal/svc"
 	"dht-ocean/ocean/ocean"
 

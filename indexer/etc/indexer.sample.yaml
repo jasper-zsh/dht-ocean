@@ -1,0 +1,6 @@
+Name: indexer
+Prometheus:
+  Host: 0.0.0.0
+Mongo: mongodb://127.0.0.1:27017
+ElasticSearch: http://127.0.0.1:9200
+BatchSize: 100

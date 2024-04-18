@@ -1,8 +1,8 @@
 package svc
 
 import (
+	"dht-ocean/common/model"
 	"dht-ocean/ocean/internal/config"
-	"dht-ocean/ocean/internal/model"
 
 	"github.com/kamva/mgm/v3"
 	"github.com/olivere/elastic/v7"
@@ -18,7 +18,6 @@ const (
 type ServiceContext struct {
 	Config            config.Config
 	TorrentCollection *mgm.Collection
-	Indexer           *Indexer
 	MetricOceanEvent  metric.CounterVec
 	TorrentCountGauge metric.GaugeVec
 	ESClient          *elastic.Client
@@ -34,7 +33,6 @@ func NewServiceContext(c config.Config) *ServiceContext {
 		Config:            c,
 		TorrentCollection: mgm.Coll(&model.Torrent{}),
 	}
-	svcCtx.Indexer = NewIndexer(svcCtx)
 	svcCtx.MetricOceanEvent = metric.NewCounterVec(&metric.CounterVecOpts{
 		Namespace: metricNamespace,
 		Subsystem: metricSubsystem,

@@ -3,24 +3,20 @@ package svc
 import (
 	"context"
 	"dht-ocean/common/bittorrent/tracker"
-	"dht-ocean/ocean/oceanclient"
 	"dht-ocean/tracker/internal/config"
 
 	"github.com/zeromicro/go-zero/core/logx"
-	"github.com/zeromicro/go-zero/zrpc"
 )
 
 type ServiceContext struct {
-	Config   config.Config
-	OceanRpc oceanclient.Ocean
-	Tracker  tracker.Tracker
-	Updater  *TrackerUpdater
+	Config  config.Config
+	Tracker tracker.Tracker
+	Updater *TrackerUpdater
 }
 
 func NewServiceContext(ctx context.Context, c config.Config) *ServiceContext {
 	svcCtx := &ServiceContext{
-		Config:   c,
-		OceanRpc: oceanclient.NewOcean(zrpc.MustNewClient(c.Ocean)),
+		Config: c,
 	}
 	tr, err := tracker.NewUDPTracker(ctx, c.Tracker)
 	if err != nil {

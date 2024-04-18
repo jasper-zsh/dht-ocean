@@ -1,7 +1,6 @@
-Ocean:
-  Etcd:
-    Hosts:
-      - 127.0.0.1:2379
-    Key: ocean.rpc
+Name: tracker
+Prometheus:
+  Host: 0.0.0.0
+Mongo: mongodb://127.0.0.1:27017
 Tracker: tracker.openbittorrent.com:6969
 TrackerLimit: 10

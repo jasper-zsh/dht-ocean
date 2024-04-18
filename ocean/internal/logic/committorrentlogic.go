@@ -2,7 +2,8 @@ package logic
 
 import (
 	"context"
-	"dht-ocean/ocean/internal/model"
+	"dht-ocean/common/model"
+
 	"go.mongodb.org/mongo-driver/mongo/options"
 
 	"dht-ocean/ocean/internal/svc"

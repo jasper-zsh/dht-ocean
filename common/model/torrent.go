@@ -56,6 +56,16 @@ func NewTorrentFromCommitRequest(t *ocean.CommitTorrentRequest) *Torrent {
 	return r
 }
 
+func (t *Torrent) Valid() bool {
+	if len(t.InfoHash) == 0 {
+		return false
+	}
+	if len(t.Name) == 0 {
+		return false
+	}
+	return true
+}
+
 func (t *Torrent) Corrupted() bool {
 	for _, f := range t.Files {
 		if len(f.Paths) == 0 {
