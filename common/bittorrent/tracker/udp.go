@@ -33,6 +33,13 @@ func (t *UDPTracker) Result() chan []*ScrapeResult {
 
 // ScrapeAsync implements Tracker.
 func (t *UDPTracker) Scrape(infoHashes [][]byte) error {
+	if t.conn == nil {
+		err := t.connect()
+		if err != nil {
+			logx.Errorf("Failed to connect to tracker: %+v", err)
+			return errors.Trace(err)
+		}
+	}
 	if t.connectionID == 0 {
 		<-t.connected
 	}
@@ -51,10 +58,6 @@ func (t *UDPTracker) Scrape(infoHashes [][]byte) error {
 		if err != nil {
 			return errors.Trace(err)
 		}
-	}
-	if t.conn == nil {
-		logx.Errorf("nil connection")
-		return errors.New("nil connection")
 	}
 	t.scrapeQueue.Set(reqHdr.TransactionID, infoHashes)
 	_, err = t.conn.Write(writer.Bytes())
@@ -78,6 +81,22 @@ func (t *UDPTracker) Start() error {
 	if t.conn != nil {
 		return nil
 	}
+	err := t.connect()
+	if err != nil {
+		return errors.Trace(err)
+	}
+	return nil
+}
+
+func (t *UDPTracker) Stop() {
+	if t.conn != nil {
+		t.conn.Close()
+		t.conn = nil
+		t.connectionID = 0
+	}
+}
+
+func (t *UDPTracker) connect() error {
 	addr, err := net.ResolveUDPAddr("udp", t.addr)
 	if err != nil {
 		return errors.Trace(err)
@@ -97,17 +116,11 @@ func (t *UDPTracker) Start() error {
 	return nil
 }
 
-func (t *UDPTracker) Stop() {
-	if t.conn != nil {
-		t.conn.Close()
-		t.conn = nil
-	}
-}
-
 func (t *UDPTracker) disconnect() {
 	if t.conn != nil {
 		t.conn.Close()
 		t.conn = nil
+		t.connectionID = 0
 	}
 }
 
@@ -139,6 +152,7 @@ func (t *UDPTracker) receive() {
 			err = errors.Errorf("unknown action: %d", hdr.Action)
 		}
 		if err != nil {
+			logx.Errorf("Failed to handle tracker response: %+v", err)
 			t.disconnect()
 			return
 		}
