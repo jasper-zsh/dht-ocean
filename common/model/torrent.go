@@ -1,6 +1,7 @@
 package model
 
 import (
+	"dht-ocean/common/bittorrent"
 	"dht-ocean/ocean/ocean"
 	"encoding/hex"
 	"time"
@@ -54,6 +55,23 @@ func NewTorrentFromCommitRequest(t *ocean.CommitTorrentRequest) *Torrent {
 		r.Length += file.Length
 	}
 	return r
+}
+
+func NewTorrentFromBTTorrent(t *bittorrent.Torrent) *Torrent {
+	now := time.Now()
+	ret := &Torrent{
+		InfoHash:      hex.EncodeToString(t.InfoHash),
+		Name:          t.Name,
+		Files:         make([]*File, 0, len(t.Files)),
+		SearchUpdated: false,
+		CreatedAt:     &now,
+		UpdatedAt:     &now,
+	}
+	for _, file := range t.Files {
+		ret.Files = append(ret.Files, NewFileFromBTFile(file))
+		ret.Length += file.Length
+	}
+	return ret
 }
 
 func (t *Torrent) Valid() bool {

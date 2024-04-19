@@ -1,10 +1,15 @@
 module dht-ocean
 
-go 1.18
+go 1.21
+
+toolchain go1.22.2
 
 require (
 	github.com/RoaringBitmap/roaring v1.3.0
+	github.com/ThreeDotsLabs/watermill v1.3.5
+	github.com/ThreeDotsLabs/watermill-amqp/v2 v2.1.1
 	github.com/elliotchance/orderedmap v1.4.0
+	github.com/juju/errors v1.0.0
 	github.com/kamva/mgm/v3 v3.4.1
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/olivere/elastic/v7 v7.0.32
@@ -14,6 +19,7 @@ require (
 	github.com/stretchr/testify v1.9.0
 	github.com/zeromicro/go-zero v1.5.5
 	go.mongodb.org/mongo-driver v1.12.1
+	golang.org/x/net v0.14.0
 	golang.org/x/time v0.3.0
 	google.golang.org/grpc v1.57.0
 	google.golang.org/protobuf v1.31.0
@@ -22,6 +28,7 @@ require (
 require (
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bits-and-blooms/bitset v1.2.0 // indirect
+	github.com/cenkalti/backoff/v3 v3.2.2 // indirect
 	github.com/cenkalti/backoff/v4 v4.2.0 // indirect
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect
 	github.com/coreos/go-semver v0.3.1 // indirect
@@ -43,13 +50,15 @@ require (
 	github.com/google/gnostic v0.5.7-v3refs // indirect
 	github.com/google/go-cmp v0.5.9 // indirect
 	github.com/google/gofuzz v1.2.0 // indirect
+	github.com/google/uuid v1.6.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.15.0 // indirect
-	github.com/jasper-zsh/socks5 v0.0.0-20240412055446-004af8f261f8 // indirect
+	github.com/hashicorp/errwrap v1.1.0 // indirect
+	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
-	github.com/juju/errors v1.0.0 // indirect
 	github.com/klauspost/compress v1.15.15 // indirect
+	github.com/lithammer/shortuuid/v3 v3.0.7 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.17 // indirect
@@ -59,6 +68,7 @@ require (
 	github.com/montanaflynn/stats v0.0.0-20171201202039-1bf9dbcd8cbe // indirect
 	github.com/mschoch/smat v0.2.0 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
+	github.com/oklog/ulid v1.3.1 // indirect
 	github.com/openzipkin/zipkin-go v0.4.1 // indirect
 	github.com/pelletier/go-toml/v2 v2.0.9 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
@@ -66,6 +76,7 @@ require (
 	github.com/prometheus/client_model v0.3.0 // indirect
 	github.com/prometheus/common v0.42.0 // indirect
 	github.com/prometheus/procfs v0.10.1 // indirect
+	github.com/rabbitmq/amqp091-go v1.9.0 // indirect
 	github.com/xdg-go/pbkdf2 v1.0.0 // indirect
 	github.com/xdg-go/scram v1.1.2 // indirect
 	github.com/xdg-go/stringprep v1.0.4 // indirect
@@ -89,7 +100,6 @@ require (
 	go.uber.org/multierr v1.9.0 // indirect
 	go.uber.org/zap v1.24.0 // indirect
 	golang.org/x/crypto v0.12.0 // indirect
-	golang.org/x/net v0.14.0 // indirect
 	golang.org/x/oauth2 v0.7.0 // indirect
 	golang.org/x/sync v0.2.0 // indirect
 	golang.org/x/sys v0.11.0 // indirect

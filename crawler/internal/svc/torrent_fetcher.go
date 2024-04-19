@@ -4,19 +4,24 @@ import (
 	"context"
 	"dht-ocean/common/bittorrent"
 	"dht-ocean/common/executor"
+	"dht-ocean/common/model"
 	"dht-ocean/common/util"
-	"dht-ocean/ocean/ocean"
-	"dht-ocean/ocean/oceanclient"
 	"encoding/hex"
+	"encoding/json"
 	"os"
 	"reflect"
 	"strings"
 
+	"github.com/ThreeDotsLabs/watermill"
+	"github.com/ThreeDotsLabs/watermill/message"
 	"github.com/juju/errors"
 	"github.com/mitchellh/mapstructure"
 	"github.com/sirupsen/logrus"
 	"github.com/zeromicro/go-zero/core/logx"
 	"github.com/zeromicro/go-zero/core/threading"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 	"golang.org/x/net/proxy"
 )
 
@@ -129,40 +134,28 @@ func (f *TorrentFetcher) Push(req TorrentRequest) {
 }
 
 func (f *TorrentFetcher) checkExistLoop() {
-	batchSize := f.svcCtx.Config.CheckExistBatchSize
-	buf := make([]TorrentRequest, 0, batchSize)
 	for {
 		select {
 		case <-f.ctx.Done():
 			return
 		case req := <-f.uncheckedChan:
-			buf = append(buf, req)
-			if len(buf) >= batchSize {
-				go f.batchCheck(buf)
-				buf = make([]TorrentRequest, 0, batchSize)
+			result := f.svcCtx.TorrentColl.FindOne(f.ctx, bson.M{
+				"_id": hex.EncodeToString(req.InfoHash),
+			}, &options.FindOneOptions{
+				Projection: bson.M{
+					"_id": true,
+				},
+			})
+			err := result.Err()
+			if err != nil {
+				if err == mongo.ErrNoDocuments {
+					f.commit(req)
+				} else {
+					logx.Errorf("Failed to check torrent exists: %+v", err)
+				}
+			} else {
+				f.bloomFilter.Add(req.InfoHash)
 			}
-		}
-	}
-}
-
-func (f *TorrentFetcher) batchCheck(reqs []TorrentRequest) {
-	infoHashes := make([][]byte, 0, len(reqs))
-	for _, req := range reqs {
-		infoHashes = append(infoHashes, req.InfoHash)
-	}
-	req := &oceanclient.BatchInfoHashExistRequest{
-		InfoHashes: infoHashes,
-	}
-	res, err := f.svcCtx.OceanRpc.BatchInfoHashExist(f.ctx, req)
-	if err != nil {
-		logx.Errorf("Failed to batch check %d info hash exists. %+v", len(reqs), err)
-		return
-	}
-	for idx, result := range res.Results {
-		if result {
-			f.bloomFilter.Add(infoHashes[idx])
-		} else {
-			f.commit(reqs[idx])
 		}
 	}
 }
@@ -228,24 +221,17 @@ func (f *TorrentFetcher) pullTorrent(bt *bittorrent.BitTorrent) {
 }
 
 func (f *TorrentFetcher) handleTorrent(torrent *bittorrent.Torrent) {
-	req := &ocean.CommitTorrentRequest{
-		InfoHash:  torrent.InfoHash,
-		Name:      torrent.Name,
-		Publisher: torrent.Publisher,
-		Source:    torrent.Source,
-		Files:     make([]*ocean.File, 0, len(torrent.Files)),
-	}
-	for _, file := range torrent.Files {
-		req.Files = append(req.Files, &ocean.File{
-			Length:   file.Length,
-			Paths:    file.Path,
-			FileHash: file.FileHash,
-		})
-	}
-	_, err := f.svcCtx.OceanRpc.CommitTorrent(context.TODO(), req)
+	t := model.NewTorrentFromBTTorrent(torrent)
+	raw, err := json.Marshal(t)
 	if err != nil {
-		logx.Errorf("Failed to commit torrent %s %s. %v", torrent.InfoHash, torrent.Name, err)
+		logx.Errorf("Failed to marshal torrent: %+v", err)
 		return
 	}
-	f.bloomFilter.Add(req.InfoHash)
+	msg := message.NewMessage(watermill.NewUUID(), raw)
+	err = f.svcCtx.Publisher.Publish(model.TopicNewTorrent, msg)
+	if err != nil {
+		logx.Errorf("Failed to publish new torrent %s %s message: %+v", hex.EncodeToString(torrent.InfoHash), torrent.Name, err)
+		return
+	}
+	f.bloomFilter.Add(torrent.InfoHash)
 }

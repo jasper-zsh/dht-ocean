@@ -8,6 +8,9 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/ThreeDotsLabs/watermill"
+	"github.com/ThreeDotsLabs/watermill-amqp/v2/pkg/amqp"
+	"github.com/ThreeDotsLabs/watermill/message"
 	"github.com/juju/errors"
 	"github.com/kamva/mgm/v3"
 	"github.com/kamva/mgm/v3/operator"
@@ -19,7 +22,7 @@ import (
 )
 
 const (
-	emptyWaitTime   = 5 * time.Second
+	emptyWaitTime   = 10 * time.Second
 	metricNamespace = "dht_ocean"
 	metricSubsystem = "indexer"
 )
@@ -52,20 +55,30 @@ type Indexer struct {
 	torrentCol *mgm.Collection
 	es         *elastic.Client
 
-	batchSize int64
+	batchSize     int64
+	batch         []*model.Torrent
+	delayedCursor *time.Time
+
+	publisher message.Publisher
+	router    *message.Router
 
 	waitTicker  *time.Ticker
-	statsTicker *time.Ticker
 	hasTorrent  chan struct{}
+	statsTicker *time.Ticker
 }
+
+const (
+	handlerNameIndexer = "indexer"
+)
 
 func NewIndexer(ctx context.Context, conf *config.Config) (*Indexer, error) {
 	indexer := &Indexer{
-		waitTicker:  time.NewTicker(emptyWaitTime),
 		statsTicker: time.NewTicker(1 * time.Second),
-		hasTorrent:  make(chan struct{}, 1),
 		torrentCol:  mgm.Coll(&model.Torrent{}),
 		batchSize:   conf.BatchSize,
+		batch:       make([]*model.Torrent, 0, conf.BatchSize),
+		waitTicker:  time.NewTicker(emptyWaitTime),
+		hasTorrent:  make(chan struct{}, 1),
 	}
 	indexer.ctx, indexer.cancel = context.WithCancel(ctx)
 	var err error
@@ -76,6 +89,28 @@ func NewIndexer(ctx context.Context, conf *config.Config) (*Indexer, error) {
 	if err != nil {
 		return nil, errors.Trace(err)
 	}
+
+	logger := watermill.NewStdLogger(false, false)
+	amqpConfig := amqp.NewDurablePubSubConfig(conf.AMQP, amqp.GenerateQueueNameConstant("indexer"))
+	amqpConfig.Consume.Qos.PrefetchCount = conf.AMQPPreFetch
+	indexer.publisher, err = amqp.NewPublisher(amqpConfig, logger)
+	if err != nil {
+		return nil, errors.Trace(err)
+	}
+	subscriber, err := amqp.NewSubscriber(amqpConfig, logger)
+	if err != nil {
+		return nil, errors.Trace(err)
+	}
+	err = subscriber.SubscribeInitialize(model.TopicTrackerUpdated)
+	if err != nil {
+		return nil, errors.Trace(err)
+	}
+	indexer.router, err = message.NewRouter(message.RouterConfig{}, logger)
+	if err != nil {
+		return nil, errors.Trace(err)
+	}
+	indexer.router.AddNoPublisherHandler(handlerNameIndexer, model.TopicNewTorrent, subscriber, indexer.consumeTorrent)
+
 	return indexer, nil
 }
 
@@ -97,27 +132,10 @@ func (i *Indexer) stats() {
 
 func (i *Indexer) Start() {
 	go i.stats()
-	for {
-		select {
-		case <-i.ctx.Done():
-			return
-		case <-i.hasTorrent:
-			cnt, lastUpdatedAt := i.indexTorrents(int64(i.batchSize))
-			if cnt > 0 {
-				logx.Infof("Indexed %d torrents", cnt)
-				i.waitTicker.Reset(emptyWaitTime)
-				util.EmptyChannel(i.hasTorrent)
-				i.hasTorrent <- struct{}{}
-			} else {
-				logx.Infof("Index done, wait for next tick")
-			}
-			if lastUpdatedAt != nil {
-				metricGauge.Set(float64(time.Since(*lastUpdatedAt).Seconds()), "index_latency_seconds")
-			}
-		case <-i.waitTicker.C:
-			util.EmptyChannel(i.hasTorrent)
-			i.hasTorrent <- struct{}{}
-		}
+	go i.handleDelayedTorrents()
+	err := i.router.Run(i.ctx)
+	if err != nil {
+		logx.Errorf("Router error: %+v", err)
 	}
 }
 
@@ -126,110 +144,125 @@ func (i *Indexer) Stop() {
 	i.cancel()
 }
 
-func (i *Indexer) indexTorrents(limit int64) (int, *time.Time) {
-	startAt := time.Now().UnixMilli()
-	col := mgm.Coll(&model.Torrent{})
-	records := make([]*model.Torrent, 0, limit)
-	err := col.SimpleFind(&records, bson.M{
-		"search_updated": false,
+func (i *Indexer) consumeTorrent(msg *message.Message) error {
+	t := &model.Torrent{}
+	err := json.Unmarshal(msg.Payload, t)
+	if err != nil {
+		return errors.Trace(err)
+	}
+	if len(i.batch) < int(i.batchSize)-1 {
+		i.batch = append(i.batch, t)
+	} else {
+		// keep idempotent
+		err := i.batchSaveToIndex(append(i.batch, t))
+		if err != nil {
+			return errors.Trace(err)
+		}
+		i.delayedCursor = i.batch[0].UpdatedAt
+		i.batch = make([]*model.Torrent, 0, i.batchSize)
+	}
+	return nil
+}
+
+func (i *Indexer) handleDelayedTorrents() {
+	for {
+		select {
+		case <-i.ctx.Done():
+			return
+		case <-i.hasTorrent:
+			cnt := i.indexDelayedTorrents(i.batchSize)
+			if cnt > 0 {
+				logx.Infof("Indexed %d delayed torrents", cnt)
+				i.waitTicker.Reset(emptyWaitTime)
+				util.EmptyChannel(i.hasTorrent)
+				i.hasTorrent <- struct{}{}
+			}
+		case <-i.waitTicker.C:
+			util.EmptyChannel(i.hasTorrent)
+			i.hasTorrent <- struct{}{}
+		}
+	}
+}
+
+func (i *Indexer) indexDelayedTorrents(limit int64) int {
+	if i.delayedCursor == nil {
+		return 0
+	}
+	findMissingStart := time.Now().UnixMilli()
+	missingsFromIndex, err := i.missingIndexes(*i.delayedCursor, int(limit))
+	if err != nil {
+		logx.Errorf("Failed to find missing indexes: %+v", err)
+		return 0
+	}
+	missingsLastUpdatedAt := missingsFromIndex[len(missingsFromIndex)-1].UpdatedAt
+	findMissingEnd := time.Now().UnixMilli()
+	metricHistogram.Observe(findMissingEnd-findMissingStart, "find_missings_cost")
+	if len(missingsFromIndex) == 0 {
+		return 0
+	}
+	ids := make([]string, 0, len(missingsFromIndex))
+	for _, t := range missingsFromIndex {
+		ids = append(ids, t.InfoHash)
+	}
+	missingsFromDB := make([]*model.Torrent, 0, limit)
+	err = i.torrentCol.SimpleFind(&missingsFromDB, bson.M{
+		"_id": bson.M{
+			operator.In: ids,
+		},
 	}, &options.FindOptions{
 		Sort: bson.M{
 			"updated_at": 1,
 		},
-		Limit: &limit,
 	})
 	if err != nil {
-		logx.Errorf("Failed to find records to index. %+v", err)
-		return 0, nil
+		logx.Errorf("Failed to fetch missings: %+v", err)
+		return 0
 	}
-	fetchAt := time.Now().UnixMilli()
-	metricHistogram.Observe(fetchAt-startAt, "fetch_cost")
-	if len(records) == 0 {
-		return 0, nil
+	missingFetchAt := time.Now().UnixMilli()
+	metricHistogram.Observe(missingFetchAt-findMissingEnd, "fetch_missings_cost")
+	missingFromDBSet := make(map[string]struct{})
+	for _, t := range missingsFromDB {
+		missingFromDBSet[t.InfoHash] = struct{}{}
 	}
-	lastUpdatedAt := records[len(records)-1].UpdatedAt
-	err = i.batchSaveToIndex(records)
-	if err != nil {
-		return 0, nil
+	// write back to db
+	writeBackToDB := make([]*model.Torrent, 0, len(missingsFromIndex))
+	for _, t := range missingsFromIndex {
+		_, ok := missingFromDBSet[t.InfoHash]
+		if !ok && t.Valid() {
+			// exists in index but missing in db, write back to db
+			writeBackToDB = append(writeBackToDB, t)
+		}
 	}
-	indexAt := time.Now().UnixMilli()
-	metricHistogram.Observe(indexAt-fetchAt, "index_cost")
-	if lastUpdatedAt != nil {
-		missingsFromIndex, err := i.missingIndexes(*lastUpdatedAt, int(limit))
-		if err != nil {
-			logx.Errorf("Failed to find missing indexes: %+v", err)
-			return len(records), lastUpdatedAt
-		}
-		missingsLastUpdatedAt := missingsFromIndex[len(missingsFromIndex)-1].UpdatedAt
-		if lastUpdatedAt != nil && missingsLastUpdatedAt != nil && missingsLastUpdatedAt.Before(*lastUpdatedAt) {
-			lastUpdatedAt = missingsLastUpdatedAt
-		}
-		missingAt := time.Now().UnixMilli()
-		metricHistogram.Observe(missingAt-indexAt, "find_missings_cost")
-		if len(missingsFromIndex) == 0 {
-			return len(records), lastUpdatedAt
-		}
-		ids := make([]string, 0, len(missingsFromIndex))
-		for _, t := range missingsFromIndex {
-			ids = append(ids, t.InfoHash)
-		}
-		missingsFromDB := make([]*model.Torrent, 0, limit)
-		err = i.torrentCol.SimpleFind(&missingsFromDB, bson.M{
-			"_id": bson.M{
-				operator.In: ids,
-			},
-		}, &options.FindOptions{
-			Sort: bson.M{
-				"updated_at": 1,
-			},
-		})
-		if err != nil {
-			logx.Errorf("Failed to fetch missings: %+v", err)
-			return len(records), lastUpdatedAt
-		}
-		missingFetchAt := time.Now().UnixMilli()
-		metricHistogram.Observe(missingFetchAt-missingAt, "fetch_missings_cost")
-		missingFromDBSet := make(map[string]struct{})
-		for _, t := range missingsFromDB {
-			missingFromDBSet[t.InfoHash] = struct{}{}
-		}
-		// write back to db
-		writeBackToDB := make([]*model.Torrent, 0, len(missingsFromIndex))
-		for _, t := range missingsFromIndex {
-			_, ok := missingFromDBSet[t.InfoHash]
-			if !ok && t.Valid() {
-				// exists in index but missing in db, write back to db
-				writeBackToDB = append(writeBackToDB, t)
-			}
-		}
-		if len(writeBackToDB) > 0 {
-			writeBackStart := time.Now().UnixMilli()
-			opts := &options.UpdateOptions{}
-			opts.SetUpsert(true)
-			for _, t := range writeBackToDB {
-				err = i.torrentCol.Update(t, opts)
-				if err != nil {
-					logx.Errorf("Failed to write back to db: %+v", err)
-					continue
-				}
-				metricCounter.Inc("write_back_to_db")
-			}
-			writeBackAt := time.Now().UnixMilli()
-			metricHistogram.Observe(writeBackAt-writeBackStart, "write_back_cost")
-		}
-		if len(missingsFromDB) > 0 {
-			indexMissingStart := time.Now().UnixMilli()
-			err = i.batchSaveToIndex(missingsFromDB)
+	if len(writeBackToDB) > 0 {
+		writeBackStart := time.Now().UnixMilli()
+		opts := &options.UpdateOptions{}
+		opts.SetUpsert(true)
+		for _, t := range writeBackToDB {
+			err = i.torrentCol.Update(t, opts)
 			if err != nil {
-				logx.Errorf("Failed to index missings: %+v", err)
-				return len(records), lastUpdatedAt
+				logx.Errorf("Failed to write back to db: %+v", err)
+				continue
 			}
-			indexMissingAt := time.Now().UnixMilli()
-			metricHistogram.Observe(indexMissingAt-indexMissingStart, "index_missings_cost")
-			return len(records) + len(missingsFromDB), lastUpdatedAt
+			metricCounter.Inc("write_back_to_db")
 		}
+		writeBackAt := time.Now().UnixMilli()
+		metricHistogram.Observe(writeBackAt-writeBackStart, "write_back_cost")
 	}
-	return len(records), lastUpdatedAt
+	if len(missingsFromDB) > 0 {
+		indexMissingStart := time.Now().UnixMilli()
+		err = i.batchSaveToIndex(missingsFromDB)
+		if err != nil {
+			logx.Errorf("Failed to index missings: %+v", err)
+			return 0
+		}
+		indexMissingAt := time.Now().UnixMilli()
+		metricHistogram.Observe(indexMissingAt-indexMissingStart, "index_missings_cost")
+		if missingsLastUpdatedAt != nil {
+			metricGauge.Set(float64(time.Since(*missingsLastUpdatedAt).Seconds()), "delayed_latency_seconds")
+		}
+		return len(missingsFromDB)
+	}
+	return 0
 }
 
 func (i *Indexer) missingIndexes(cursor time.Time, limit int) ([]*model.Torrent, error) {

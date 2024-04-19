@@ -1,10 +1,7 @@
 Name: crawler
-Ocean:
-  Etcd:
-    Hosts:
-      - 127.0.0.1:2379
-    Key: ocean.rpc
 DHTListen: ":6881"
+AMQP: amqp://guest:guest@127.0.0.1:5672
+Mongo: mongodb://admin:admin@127.0.0.1:27017/?directConnection=true
 BootstrapNodes:
   - dht.transmissionbt.com:6881
   - tracker.moeking.me:6881

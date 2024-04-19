@@ -24,7 +24,11 @@ func NewServiceContext(ctx context.Context, c config.Config) *ServiceContext {
 		panic(err)
 	}
 	svcCtx.Tracker = tr
-	updater := NewTrackerUpdater(ctx, svcCtx, c.TrackerLimit)
+	updater, err := NewTrackerUpdater(ctx, svcCtx, c.TrackerLimit)
+	if err != nil {
+		logx.Errorf("Failed to initialize updater: %+v", err)
+		panic(err)
+	}
 	svcCtx.Updater = updater
 	return svcCtx
 }

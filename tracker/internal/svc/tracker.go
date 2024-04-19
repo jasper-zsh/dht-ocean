@@ -3,10 +3,16 @@ package svc
 import (
 	"context"
 	"dht-ocean/common/model"
+	"dht-ocean/common/util"
 	"encoding/hex"
+	"encoding/json"
 	"sync"
 	"time"
 
+	"github.com/ThreeDotsLabs/watermill"
+	"github.com/ThreeDotsLabs/watermill-amqp/v2/pkg/amqp"
+	"github.com/ThreeDotsLabs/watermill/message"
+	"github.com/juju/errors"
 	"github.com/kamva/mgm/v3"
 	"github.com/kamva/mgm/v3/operator"
 	"github.com/sirupsen/logrus"
@@ -42,23 +48,61 @@ type TrackerUpdater struct {
 	svcCtx *ServiceContext
 
 	trackerLimit int64
+	batch        []*model.Torrent
+	torrentCache *util.LRWCache[string, *model.Torrent]
 
 	torrentCol *mgm.Collection
+
+	publisher message.Publisher
+	router    *message.Router
 }
 
-func NewTrackerUpdater(ctx context.Context, svcCtx *ServiceContext, limit int64) *TrackerUpdater {
+const (
+	handlerNameTracker = "tracker"
+)
+
+func NewTrackerUpdater(ctx context.Context, svcCtx *ServiceContext, limit int64) (*TrackerUpdater, error) {
 	r := &TrackerUpdater{
 		svcCtx:       svcCtx,
 		trackerLimit: limit,
+		batch:        make([]*model.Torrent, 0, limit),
+		torrentCache: util.NewLRWCache[string, *model.Torrent](ctx, 300, 4096, true),
 		torrentCol:   mgm.Coll(&model.Torrent{}),
 	}
 	r.ctx, r.cancel = context.WithCancel(ctx)
-	return r
+
+	amqpConfig := amqp.NewDurablePubSubConfig(svcCtx.Config.AMQP, amqp.GenerateQueueNameConstant("tracker"))
+	amqpConfig.Consume.Qos.PrefetchCount = svcCtx.Config.AMQPPreFetch
+	var err error
+	logger := watermill.NewStdLogger(false, false)
+	r.publisher, err = amqp.NewPublisher(amqpConfig, logger)
+	if err != nil {
+		return nil, errors.Trace(err)
+	}
+	subscriber, err := amqp.NewSubscriber(amqpConfig, logger)
+	if err != nil {
+		return nil, errors.Trace(err)
+	}
+	err = subscriber.SubscribeInitialize(model.TopicUpdateTracker)
+	if err != nil {
+		return nil, errors.Trace(err)
+	}
+	r.router, err = message.NewRouter(message.RouterConfig{}, logger)
+	if err != nil {
+		return nil, errors.Trace(err)
+	}
+	r.router.AddNoPublisherHandler(handlerNameTracker, model.TopicNewTorrent, subscriber, r.handleUpdate)
+
+	return r, nil
 }
 
 func (u *TrackerUpdater) Start() {
 	go u.handleResult()
-	u.fetch()
+	go u.fetch()
+	err := u.router.Run(u.ctx)
+	if err != nil {
+		logx.Errorf("Router error: %+v", err)
+	}
 }
 
 func (u *TrackerUpdater) Stop() {
@@ -76,6 +120,35 @@ func (u *TrackerUpdater) fetch() {
 	}
 }
 
+func (u *TrackerUpdater) handleUpdate(msg *message.Message) error {
+	t := &model.Torrent{}
+	err := json.Unmarshal(msg.Payload, t)
+	if err != nil {
+		return errors.Trace(err)
+	}
+	if len(u.batch) < int(u.trackerLimit)-1 {
+		u.batch = append(u.batch, t)
+	} else {
+		b := append(u.batch, t)
+		infoHashes := make([][]byte, 0, len(b))
+		for _, torrent := range b {
+			hash, err := hex.DecodeString(torrent.InfoHash)
+			if err != nil {
+				return errors.Trace(err)
+			}
+			infoHashes = append(infoHashes, hash)
+			u.torrentCache.Set(torrent.InfoHash, torrent)
+		}
+		err := u.svcCtx.Tracker.Scrape(infoHashes)
+		if err != nil {
+			return errors.Trace(err)
+		}
+		u.batch = make([]*model.Torrent, 0, u.trackerLimit)
+	}
+
+	return nil
+}
+
 type trackerUpdate struct {
 	Seeders       uint32 `bson:"seeders"`
 	Leechers      uint32 `bson:"leechers"`
@@ -88,25 +161,31 @@ func (u *TrackerUpdater) handleResult() {
 		case <-u.ctx.Done():
 			return
 		case result := <-u.svcCtx.Tracker.Result():
-			// now := time.Now()
+			now := time.Now()
 			for _, r := range result {
 				hash := hex.EncodeToString(r.InfoHash)
-				result, err := u.torrentCol.UpdateByID(u.ctx, hash, bson.M{
-					operator.Set: trackerUpdate{
-						Seeders:       r.Seeders,
-						Leechers:      r.Leechers,
-						SearchUpdated: false,
-					},
-					operator.CurrentDate: bson.M{
-						"tracker_updated_at": true,
-						"updated_at":         true,
-					},
-				})
-				if err != nil {
-					logx.Errorf("Failed to update tracker for %s", hash)
+				torrent, ok := u.torrentCache.GetAndRemove(hash)
+				if !ok {
+					logx.Infof("Torrent cache missing for %s", hash)
 					continue
 				}
-				metricCounter.Add(float64(result.ModifiedCount), "tracker_updated")
+				torrent.Seeders = &r.Seeders
+				torrent.Leechers = &r.Leechers
+				torrent.SearchUpdated = false
+				torrent.TrackerUpdatedAt = &now
+				torrent.UpdatedAt = &now
+				raw, err := json.Marshal(torrent)
+				if err != nil {
+					logx.Errorf("Failed to marshal torrent: %+v", err)
+					continue
+				}
+				msg := message.NewMessage(watermill.NewUUID(), raw)
+				err = u.publisher.Publish(model.TopicTrackerUpdated, msg)
+				if err != nil {
+					logx.Errorf("Failed to publish tracker updated: %+v", err)
+					continue
+				}
+				metricCounter.Inc("tracker_updated")
 			}
 		}
 	}
@@ -114,50 +193,14 @@ func (u *TrackerUpdater) handleResult() {
 
 func (l *TrackerUpdater) getRecords(size int64) ([]*model.Torrent, error) {
 	records := make([]*model.Torrent, 0)
-	notTried := make([]*model.Torrent, 0)
-	err := l.torrentCol.SimpleFind(&notTried, bson.M{
-		"tracker_last_tried_at": bson.M{
-			operator.Eq: nil,
-		},
-	}, &options.FindOptions{
-		Sort: bson.M{
-			"updated_at": 1,
-		},
-		Limit: &size,
-	})
-	if err != nil {
-		logx.Errorf("Failed to load torrents for tracker. %v", err)
-		return nil, err
-	}
-	records = append(records, notTried...)
-	limit := size - int64(len(notTried))
-	if limit == 0 {
-		return records, nil
-	}
-	newRecords := make([]*model.Torrent, 0)
-	err = l.torrentCol.SimpleFind(&newRecords, bson.M{
-		"tracker_updated_at": bson.M{
-			operator.Eq: nil,
-		},
-	}, &options.FindOptions{
-		Sort: bson.M{
-			"tracker_last_tried_at": 1,
-		},
-		Limit: &limit,
-	})
-	if err != nil {
-		logrus.Errorf("Failed to load torrents for tracker. %v", err)
-		return nil, err
-	}
-	records = append(records, newRecords...)
-	limit = limit - int64(len(newRecords))
-	if limit == 0 {
-		return records, nil
-	}
 	outdated := make([]*model.Torrent, 0)
+	limit := size
 	age := time.Now().Add(-6 * time.Hour)
-	err = l.torrentCol.SimpleFind(&outdated, bson.M{
+	err := l.torrentCol.SimpleFind(&outdated, bson.M{
 		"tracker_updated_at": bson.M{
+			operator.Lte: age,
+		},
+		"updated_at": bson.M{
 			operator.Lte: age,
 		},
 	}, &options.FindOptions{
@@ -202,20 +245,18 @@ func (u *TrackerUpdater) refreshTracker() {
 				logx.Errorf("Failed to update tracker last tries time for %s", r.InfoHash)
 			}
 		}()
-	}
-	wait.Wait()
-	infoHashes := make([][]byte, 0, len(records))
-	for _, record := range records {
-		hash, err := hex.DecodeString(record.InfoHash)
+		r.TrackerLastTriedAt = &now
+		raw, err := json.Marshal(r)
 		if err != nil {
-			logrus.Errorf("broken torrent record, skip tracker scrape")
+			logx.Errorf("Failed to marshal torrent: %+v", err)
 			continue
 		}
-		infoHashes = append(infoHashes, hash)
+		msg := message.NewMessage(watermill.NewUUID(), raw)
+		err = u.publisher.Publish(model.TopicUpdateTracker, msg)
+		if err != nil {
+			logx.Errorf("Failed to publish update tracker: %+v", err)
+			continue
+		}
 	}
-	err = u.svcCtx.Tracker.Scrape(infoHashes)
-	if err != nil {
-		logrus.Warnf("Failed to scrape %d torrents from tracker. %v", len(infoHashes), err)
-		return
-	}
+	wait.Wait()
 }

@@ -5,12 +5,13 @@ import (
 
 	"github.com/zeromicro/go-zero/core/proc"
 	"github.com/zeromicro/go-zero/core/service"
-	"github.com/zeromicro/go-zero/zrpc"
 )
 
 type Config struct {
 	service.ServiceConf
-	Ocean               zrpc.RpcClientConf
+	AMQP                string
+	AMQPPreFetch        int `json:",default=64"`
+	Mongo               string
 	DHTListen           string `json:",default=:6881"`
 	BootstrapNodes      []string
 	FindNodeRateLimit   int    `json:",default=3000"`

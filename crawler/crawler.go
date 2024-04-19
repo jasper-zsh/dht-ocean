@@ -1,10 +1,13 @@
 package main
 
 import (
+	"context"
 	"dht-ocean/crawler/internal/config"
 	"dht-ocean/crawler/internal/svc"
 	"flag"
 	_ "net/http/pprof"
+	"os"
+	"os/signal"
 
 	"github.com/sirupsen/logrus"
 	"github.com/zeromicro/go-zero/core/conf"
@@ -19,11 +22,14 @@ func main() {
 	var c config.Config
 	conf.MustLoad(*configFile, &c)
 	c.MustSetUp()
-	ctx := svc.NewServiceContext(c)
+
+	ctx, _ := signal.NotifyContext(context.TODO(), os.Interrupt, os.Kill)
+	svcCtx := svc.NewServiceContext(c, ctx)
 
 	group := service.NewServiceGroup()
-	group.Add(ctx.Crawler)
-	group.Add(ctx.TorrentFetcher)
+	group.Add(svcCtx.Crawler)
+	group.Add(svcCtx.TorrentFetcher)
+	group.Add(svcCtx.DBPersist)
 	defer group.Stop()
 
 	logrus.Infof("Starting crawler...")
