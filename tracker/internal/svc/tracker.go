@@ -76,29 +76,37 @@ func (u *TrackerUpdater) fetch() {
 	}
 }
 
+type trackerUpdate struct {
+	Seeders       uint32 `bson:"seeders"`
+	Leechers      uint32 `bson:"leechers"`
+	SearchUpdated bool   `bson:"search_updated"`
+}
+
 func (u *TrackerUpdater) handleResult() {
 	for {
 		select {
 		case <-u.ctx.Done():
 			return
 		case result := <-u.svcCtx.Tracker.Result():
-			now := time.Now()
+			// now := time.Now()
 			for _, r := range result {
 				hash := hex.EncodeToString(r.InfoHash)
-				_, err := u.torrentCol.UpdateByID(u.ctx, hash, bson.M{
-					operator.Set: bson.M{
-						"seeders":            r.Seeders,
-						"leechers":           r.Leechers,
-						"tracker_updated_at": now,
-						"updated_at":         now,
-						"search_updated":     false,
+				result, err := u.torrentCol.UpdateByID(u.ctx, hash, bson.M{
+					operator.Set: trackerUpdate{
+						Seeders:       r.Seeders,
+						Leechers:      r.Leechers,
+						SearchUpdated: false,
+					},
+					operator.CurrentDate: bson.M{
+						"tracker_updated_at": true,
+						"updated_at":         true,
 					},
 				})
 				if err != nil {
 					logx.Errorf("Failed to update tracker for %s", hash)
 					continue
 				}
-				metricCounter.Inc("tracker_updated")
+				metricCounter.Add(float64(result.ModifiedCount), "tracker_updated")
 			}
 		}
 	}
