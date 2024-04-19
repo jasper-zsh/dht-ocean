@@ -66,7 +66,7 @@ func NewTrackerUpdater(ctx context.Context, svcCtx *ServiceContext, limit int64)
 		svcCtx:       svcCtx,
 		trackerLimit: limit,
 		batch:        make([]*model.Torrent, 0, limit),
-		torrentCache: util.NewLRWCache[string, *model.Torrent](ctx, 300, 4096, true),
+		torrentCache: util.NewLRWCache[string, *model.Torrent](ctx, 10, 4096, true),
 		torrentCol:   mgm.Coll(&model.Torrent{}),
 	}
 	r.ctx, r.cancel = context.WithCancel(ctx)
