@@ -3,7 +3,6 @@ package svc
 import (
 	"context"
 	"dht-ocean/common/model"
-	"dht-ocean/common/util"
 	"encoding/hex"
 	"encoding/json"
 	"sync"
@@ -19,6 +18,7 @@ import (
 	"github.com/zeromicro/go-zero/core/logx"
 	"github.com/zeromicro/go-zero/core/metric"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
@@ -49,7 +49,6 @@ type TrackerUpdater struct {
 
 	trackerLimit int64
 	batch        []*model.Torrent
-	torrentCache *util.LRWCache[string, *model.Torrent]
 
 	torrentCol *mgm.Collection
 
@@ -66,7 +65,6 @@ func NewTrackerUpdater(ctx context.Context, svcCtx *ServiceContext, limit int64)
 		svcCtx:       svcCtx,
 		trackerLimit: limit,
 		batch:        make([]*model.Torrent, 0, limit),
-		torrentCache: util.NewLRWCache[string, *model.Torrent](ctx, 10, 4096, true),
 		torrentCol:   mgm.Coll(&model.Torrent{}),
 	}
 	r.ctx, r.cancel = context.WithCancel(ctx)
@@ -137,7 +135,6 @@ func (u *TrackerUpdater) handleUpdate(msg *message.Message) error {
 				return errors.Trace(err)
 			}
 			infoHashes = append(infoHashes, hash)
-			u.torrentCache.Set(torrent.InfoHash, torrent)
 		}
 		err := u.svcCtx.Tracker.Scrape(infoHashes)
 		if err != nil {
@@ -164,10 +161,16 @@ func (u *TrackerUpdater) handleResult() {
 			now := time.Now()
 			for _, r := range result {
 				hash := hex.EncodeToString(r.InfoHash)
-				torrent, ok := u.torrentCache.GetAndRemove(hash)
-				if !ok {
-					logx.Infof("Torrent cache missing for %s", hash)
-					continue
+				torrent := model.Torrent{}
+				err := u.torrentCol.FindByID(hash, &torrent)
+				if err != nil {
+					if err == mongo.ErrNoDocuments {
+						logx.Infof("Torrent %s not found", hash)
+						continue
+					} else {
+						logx.Errorf("Failed to get torrent %s %+v", hash, err)
+						continue
+					}
 				}
 				torrent.Seeders = &r.Seeders
 				torrent.Leechers = &r.Leechers
