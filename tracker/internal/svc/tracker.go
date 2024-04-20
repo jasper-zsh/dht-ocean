@@ -227,7 +227,7 @@ func (l *TrackerUpdater) getRecords(size int64) ([]*model.Torrent, error) {
 		},
 	}, &options.FindOptions{
 		Sort: bson.M{
-			"updated_at": 1,
+			"tracker_last_tried_at": 1,
 		},
 		Limit: &limit,
 	})
