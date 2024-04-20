@@ -86,7 +86,6 @@ func NewTrackerUpdater(ctx context.Context, svcCtx *ServiceContext, limit int64)
 		return nil, errors.Trace(err)
 	}
 	r.router.AddNoPublisherHandler(handlerNameTrackerPrefix+"new", model.TopicNewTorrent, subscriber, r.handleNewTorrent)
-	r.router.AddNoPublisherHandler(handlerNameTrackerPrefix+"update", model.TopicUpdateTracker, subscriber, r.handleUpdateTracker)
 
 	return r, nil
 }
@@ -113,18 +112,6 @@ func (u *TrackerUpdater) fetch() {
 			u.refreshTracker()
 		}
 	}
-}
-
-func (u *TrackerUpdater) handleUpdateTracker(msg *message.Message) error {
-	infoHashes := make([][]byte, 0, len(msg.Payload)/20)
-	for i := 0; i < len(msg.Payload); i += 20 {
-		infoHashes = append(infoHashes, msg.Payload[i:i+20])
-	}
-	err := u.svcCtx.Tracker.Scrape(infoHashes)
-	if err != nil {
-		return errors.Trace(err)
-	}
-	return nil
 }
 
 func (u *TrackerUpdater) handleNewTorrent(msg *message.Message) error {
@@ -254,7 +241,7 @@ func (u *TrackerUpdater) refreshTracker() {
 	now := time.Now()
 	wait := sync.WaitGroup{}
 
-	payload := make([]byte, 0, 20*len(records))
+	infoHashes := make([][]byte, 0, len(records))
 	for _, r := range records {
 		wait.Add(1)
 		infoHash := r.InfoHash
@@ -270,12 +257,11 @@ func (u *TrackerUpdater) refreshTracker() {
 			}
 		}()
 		b, _ := hex.DecodeString(r.InfoHash)
-		payload = append(payload, b...)
+		infoHashes = append(infoHashes, b)
 	}
 	wait.Wait()
-	msg := message.NewMessage(watermill.NewUUID(), payload)
-	err = u.publisher.Publish(model.TopicUpdateTracker, msg)
+	err = u.svcCtx.Tracker.Scrape(infoHashes)
 	if err != nil {
-		logx.Errorf("Failed to publish update tracker: %+v", err)
+		logx.Errorf("Failed to scrape update tracker: %+v", err)
 	}
 }
