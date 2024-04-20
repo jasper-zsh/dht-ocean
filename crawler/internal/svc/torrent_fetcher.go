@@ -11,6 +11,7 @@ import (
 	"os"
 	"reflect"
 	"strings"
+	"time"
 
 	"github.com/ThreeDotsLabs/watermill"
 	"github.com/ThreeDotsLabs/watermill/message"
@@ -43,6 +44,7 @@ type TorrentFetcher struct {
 	bloomFilter   *util.BloomFilter
 	executor      *executor.Executor[*bittorrent.BitTorrent]
 	proxy         proxy.Dialer
+	statsTicker   *time.Ticker
 }
 
 func InjectTorrentFetcher(svcCtx *ServiceContext) {
@@ -58,6 +60,7 @@ func NewTorrentFetcher(svcCtx *ServiceContext) (*TorrentFetcher, error) {
 	f := &TorrentFetcher{
 		uncheckedChan: make(chan TorrentRequest, 10000),
 		svcCtx:        svcCtx,
+		statsTicker:   time.NewTicker(time.Second),
 	}
 	var err error
 	if len(svcCtx.Config.Socks5Proxy) > 0 {
@@ -96,6 +99,7 @@ func (f *TorrentFetcher) Start() {
 
 	routineGroup.RunSafe(f.checkExistLoop)
 	routineGroup.RunSafe(f.executor.Start)
+	routineGroup.Run(f.stats)
 
 	routineGroup.Wait()
 }
@@ -124,6 +128,17 @@ func (f *TorrentFetcher) Stop() {
 	}
 }
 
+func (f *TorrentFetcher) stats() {
+	for {
+		select {
+		case <-f.ctx.Done():
+			return
+		case <-f.statsTicker.C:
+			metricQueueSize.Set(float64(len(f.uncheckedChan)), "db_check_exists")
+		}
+	}
+}
+
 func (f *TorrentFetcher) Push(req TorrentRequest) {
 	exist := f.bloomFilter.Exists(req.InfoHash)
 	if exist {
@@ -139,6 +154,7 @@ func (f *TorrentFetcher) checkExistLoop() {
 		case <-f.ctx.Done():
 			return
 		case req := <-f.uncheckedChan:
+			metricCrawlerEvent.Inc("db_exist_check")
 			result := f.svcCtx.TorrentColl.FindOne(f.ctx, bson.M{
 				"_id": hex.EncodeToString(req.InfoHash),
 			}, &options.FindOneOptions{
@@ -234,4 +250,5 @@ func (f *TorrentFetcher) handleTorrent(torrent *bittorrent.Torrent) {
 		return
 	}
 	f.bloomFilter.Add(torrent.InfoHash)
+	metricCrawlerEvent.Inc("new_torrent")
 }
