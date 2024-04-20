@@ -147,9 +147,11 @@ func (u *TrackerUpdater) handleUpdate(msg *message.Message) error {
 }
 
 type trackerUpdate struct {
-	Seeders       uint32 `bson:"seeders"`
-	Leechers      uint32 `bson:"leechers"`
-	SearchUpdated bool   `bson:"search_updated"`
+	Seeders          uint32    `bson:"seeders"`
+	Leechers         uint32    `bson:"leechers"`
+	SearchUpdated    bool      `bson:"search_updated"`
+	TrackerUpdatedAt time.Time `bson:"tracker_updated_at"`
+	UpdatedAt        time.Time `bson:"updated_at"`
 }
 
 func (u *TrackerUpdater) handleResult() {
@@ -161,25 +163,36 @@ func (u *TrackerUpdater) handleResult() {
 			now := time.Now()
 			for _, r := range result {
 				hash := hex.EncodeToString(r.InfoHash)
-				torrent := model.Torrent{}
-				err := u.torrentCol.FindByID(hash, &torrent)
+				result := u.torrentCol.FindOneAndUpdate(u.ctx, bson.M{
+					"_id": hash,
+				}, bson.M{
+					operator.Set: &trackerUpdate{
+						Seeders:          r.Seeders,
+						Leechers:         r.Leechers,
+						SearchUpdated:    false,
+						TrackerUpdatedAt: now,
+						UpdatedAt:        now,
+					},
+				})
+				err := result.Err()
 				if err != nil {
 					if err == mongo.ErrNoDocuments {
 						logx.Infof("Torrent %s not found", hash)
 						continue
 					} else {
-						logx.Errorf("Failed to get torrent %s %+v", hash, err)
+						logx.Errorf("Failed to update %s tracker: %+v", hash, err)
 						continue
 					}
 				}
-				torrent.Seeders = &r.Seeders
-				torrent.Leechers = &r.Leechers
-				torrent.SearchUpdated = false
-				torrent.TrackerUpdatedAt = &now
-				torrent.UpdatedAt = &now
+				torrent := &model.Torrent{}
+				err = result.Decode(torrent)
+				if err != nil {
+					logx.Errorf("Failed to unmarshal torrent: %+v", err)
+					continue
+				}
 				raw, err := json.Marshal(torrent)
 				if err != nil {
-					logx.Errorf("Failed to marshal torrent: %+v", err)
+					logx.Errorf("Failed to marshal torrent to json: %+v", err)
 					continue
 				}
 				msg := message.NewMessage(watermill.NewUUID(), raw)
