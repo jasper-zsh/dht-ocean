@@ -222,15 +222,12 @@ func (l *TrackerUpdater) getRecords(size int64) ([]*model.Torrent, error) {
 	limit := size
 	age := time.Now().Add(-6 * time.Hour)
 	err := l.torrentCol.SimpleFind(&outdated, bson.M{
-		"tracker_updated_at": bson.M{
-			operator.Lte: age,
-		},
-		"updated_at": bson.M{
+		"tracker_last_tried_at": bson.M{
 			operator.Lte: age,
 		},
 	}, &options.FindOptions{
 		Sort: bson.M{
-			"tracker_updated_at": 1,
+			"updated_at": 1,
 		},
 		Limit: &limit,
 	})
