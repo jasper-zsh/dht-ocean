@@ -32,10 +32,6 @@ func NewDBPersist(svcCtx *ServiceContext, ctx context.Context) (*DBPersist, erro
 	if err != nil {
 		return nil, errors.Trace(err)
 	}
-	err = subscriber.SubscribeInitialize(model.TopicTrackerUpdated)
-	if err != nil {
-		return nil, errors.Trace(err)
-	}
 	router, err := message.NewRouter(message.RouterConfig{}, watermill.NewStdLogger(false, false))
 	if err != nil {
 		return nil, errors.Trace(err)
@@ -46,7 +42,7 @@ func NewDBPersist(svcCtx *ServiceContext, ctx context.Context) (*DBPersist, erro
 		subscriber: subscriber,
 		router:     router,
 	}
-	router.AddNoPublisherHandler(handlerNameDBPersist, model.TopicNewTorrent, subscriber, ret.consumeNewTorrent)
+	router.AddNoPublisherHandler(handlerNameDBPersist, model.TopicTrackerUpdated, subscriber, ret.consumeNewTorrent)
 	return ret, nil
 }
 

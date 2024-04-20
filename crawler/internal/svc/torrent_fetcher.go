@@ -238,6 +238,14 @@ func (f *TorrentFetcher) pullTorrent(bt *bittorrent.BitTorrent) {
 
 func (f *TorrentFetcher) handleTorrent(torrent *bittorrent.Torrent) {
 	t := model.NewTorrentFromBTTorrent(torrent)
+	opts := options.UpdateOptions{}
+	opts.SetUpsert(true)
+	err := f.svcCtx.TorrentColl.Update(t, &opts)
+	if err != nil {
+		logx.Errorf("Failed to persist torrent %s : %+v", t.InfoHash, err)
+		return
+	}
+	metricCrawlerEvent.Inc("torrent_upsert")
 	raw, err := json.Marshal(t)
 	if err != nil {
 		logx.Errorf("Failed to marshal torrent: %+v", err)
