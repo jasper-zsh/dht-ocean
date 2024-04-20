@@ -57,7 +57,7 @@ type TrackerUpdater struct {
 }
 
 const (
-	handlerNameTracker = "tracker"
+	handlerNameTrackerPrefix = "tracker_"
 )
 
 func NewTrackerUpdater(ctx context.Context, svcCtx *ServiceContext, limit int64) (*TrackerUpdater, error) {
@@ -69,7 +69,7 @@ func NewTrackerUpdater(ctx context.Context, svcCtx *ServiceContext, limit int64)
 	}
 	r.ctx, r.cancel = context.WithCancel(ctx)
 
-	amqpConfig := amqp.NewDurablePubSubConfig(svcCtx.Config.AMQP, amqp.GenerateQueueNameConstant("tracker"))
+	amqpConfig := amqp.NewDurablePubSubConfig(svcCtx.Config.AMQP, amqp.GenerateQueueNameTopicNameWithSuffix("tracker"))
 	amqpConfig.Consume.Qos.PrefetchCount = svcCtx.Config.AMQPPreFetch
 	var err error
 	logger := watermill.NewStdLogger(false, false)
@@ -81,15 +81,12 @@ func NewTrackerUpdater(ctx context.Context, svcCtx *ServiceContext, limit int64)
 	if err != nil {
 		return nil, errors.Trace(err)
 	}
-	err = subscriber.SubscribeInitialize(model.TopicUpdateTracker)
-	if err != nil {
-		return nil, errors.Trace(err)
-	}
 	r.router, err = message.NewRouter(message.RouterConfig{}, logger)
 	if err != nil {
 		return nil, errors.Trace(err)
 	}
-	r.router.AddNoPublisherHandler(handlerNameTracker, model.TopicNewTorrent, subscriber, r.handleUpdate)
+	r.router.AddNoPublisherHandler(handlerNameTrackerPrefix+"new", model.TopicNewTorrent, subscriber, r.handleNewTorrent)
+	r.router.AddNoPublisherHandler(handlerNameTrackerPrefix+"update", model.TopicUpdateTracker, subscriber, r.handleUpdateTracker)
 
 	return r, nil
 }
@@ -118,7 +115,19 @@ func (u *TrackerUpdater) fetch() {
 	}
 }
 
-func (u *TrackerUpdater) handleUpdate(msg *message.Message) error {
+func (u *TrackerUpdater) handleUpdateTracker(msg *message.Message) error {
+	infoHashes := make([][]byte, 0, len(msg.Payload)/20)
+	for i := 0; i < len(msg.Payload); i += 20 {
+		infoHashes = append(infoHashes, msg.Payload[i:i+20])
+	}
+	err := u.svcCtx.Tracker.Scrape(infoHashes)
+	if err != nil {
+		return errors.Trace(err)
+	}
+	return nil
+}
+
+func (u *TrackerUpdater) handleNewTorrent(msg *message.Message) error {
 	t := &model.Torrent{}
 	err := json.Unmarshal(msg.Payload, t)
 	if err != nil {
@@ -247,6 +256,8 @@ func (u *TrackerUpdater) refreshTracker() {
 	}
 	now := time.Now()
 	wait := sync.WaitGroup{}
+
+	payload := make([]byte, 0, 20*len(records))
 	for _, r := range records {
 		wait.Add(1)
 		infoHash := r.InfoHash
@@ -261,18 +272,13 @@ func (u *TrackerUpdater) refreshTracker() {
 				logx.Errorf("Failed to update tracker last tries time for %s", r.InfoHash)
 			}
 		}()
-		r.TrackerLastTriedAt = &now
-		raw, err := json.Marshal(r)
-		if err != nil {
-			logx.Errorf("Failed to marshal torrent: %+v", err)
-			continue
-		}
-		msg := message.NewMessage(watermill.NewUUID(), raw)
-		err = u.publisher.Publish(model.TopicUpdateTracker, msg)
-		if err != nil {
-			logx.Errorf("Failed to publish update tracker: %+v", err)
-			continue
-		}
+		b, _ := hex.DecodeString(r.InfoHash)
+		payload = append(payload, b...)
 	}
 	wait.Wait()
+	msg := message.NewMessage(watermill.NewUUID(), payload)
+	err = u.publisher.Publish(model.TopicUpdateTracker, msg)
+	if err != nil {
+		logx.Errorf("Failed to publish update tracker: %+v", err)
+	}
 }
