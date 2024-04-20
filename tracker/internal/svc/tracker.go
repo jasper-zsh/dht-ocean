@@ -223,9 +223,9 @@ func (l *TrackerUpdater) getRecords(size int64) ([]*model.Torrent, error) {
 		return nil, err
 	}
 	if len(outdated) > 0 {
-		trackerLastUpdated := outdated[len(outdated)-1].TrackerUpdatedAt
-		if trackerLastUpdated != nil {
-			metricGauge.Set(float64(time.Since(*trackerLastUpdated).Seconds()), "tracker_latency_seconds")
+		trackerLastTriedAt := outdated[len(outdated)-1].TrackerLastTriedAt
+		if trackerLastTriedAt != nil {
+			metricGauge.Set(float64(time.Since(*trackerLastTriedAt).Seconds()), "tracker_latency_seconds")
 		}
 	}
 	records = append(records, outdated...)
