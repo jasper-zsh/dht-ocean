@@ -13,6 +13,20 @@ import (
 	"github.com/zeromicro/go-zero/core/logx"
 )
 
+type UDPTrackerConfig struct {
+	Addr      string
+	QueueSize int
+	QueueTTL  int
+}
+
+func DefaultUDPTrackerConfig(addr string) UDPTrackerConfig {
+	return UDPTrackerConfig{
+		Addr:      addr,
+		QueueSize: 100,
+		QueueTTL:  30,
+	}
+}
+
 var _ Tracker = (*UDPTracker)(nil)
 
 type UDPTracker struct {
@@ -24,6 +38,35 @@ type UDPTracker struct {
 	scrapeQueue *util.LRWCache[uint32, [][]byte]
 
 	result chan []*ScrapeResult
+}
+
+func NewUDPTracker(ctx context.Context, conf UDPTrackerConfig) (*UDPTracker, error) {
+	t := &UDPTracker{
+		addr:        conf.Addr,
+		connected:   make(chan struct{}),
+		scrapeQueue: util.NewLRWCache[uint32, [][]byte](ctx, conf.QueueTTL, conf.QueueSize, true),
+		result:      make(chan []*ScrapeResult),
+	}
+	return t, nil
+}
+
+func (t *UDPTracker) Start() error {
+	if t.conn != nil {
+		return nil
+	}
+	err := t.connect()
+	if err != nil {
+		return errors.Trace(err)
+	}
+	return nil
+}
+
+func (t *UDPTracker) Stop() {
+	if t.conn != nil {
+		t.conn.Close()
+		t.conn = nil
+		t.connectionID = 0
+	}
 }
 
 // Result implements Tracker.
@@ -65,35 +108,6 @@ func (t *UDPTracker) Scrape(infoHashes [][]byte) error {
 		return errors.Trace(err)
 	}
 	return nil
-}
-
-func NewUDPTracker(ctx context.Context, addr string) (*UDPTracker, error) {
-	t := &UDPTracker{
-		addr:        addr,
-		connected:   make(chan struct{}),
-		scrapeQueue: util.NewLRWCache[uint32, [][]byte](ctx, 10, 50, true),
-		result:      make(chan []*ScrapeResult),
-	}
-	return t, nil
-}
-
-func (t *UDPTracker) Start() error {
-	if t.conn != nil {
-		return nil
-	}
-	err := t.connect()
-	if err != nil {
-		return errors.Trace(err)
-	}
-	return nil
-}
-
-func (t *UDPTracker) Stop() {
-	if t.conn != nil {
-		t.conn.Close()
-		t.conn = nil
-		t.connectionID = 0
-	}
 }
 
 func (t *UDPTracker) connect() error {

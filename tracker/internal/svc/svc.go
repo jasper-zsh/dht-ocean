@@ -18,7 +18,11 @@ func NewServiceContext(ctx context.Context, c config.Config) *ServiceContext {
 	svcCtx := &ServiceContext{
 		Config: c,
 	}
-	tr, err := tracker.NewUDPTracker(ctx, c.Tracker)
+	tr, err := tracker.NewUDPTracker(ctx, tracker.UDPTrackerConfig{
+		Addr:      c.Tracker,
+		QueueSize: c.TrackerQueueSize,
+		QueueTTL:  c.TrackerQueueTTL,
+	})
 	if err != nil {
 		logx.Errorf("Failed to create tracker. %v", err)
 		panic(err)

@@ -9,7 +9,7 @@ import (
 )
 
 func TestUDPTracker_Scrape(t *testing.T) {
-	tracker, err := NewUDPTracker(context.Background(), "tracker.openbittorrent.com:6969")
+	tracker, err := NewUDPTracker(context.Background(), DefaultUDPTrackerConfig("tracker.openbittorrent.com:6969"))
 	if !assert.NoError(t, err) {
 		return
 	}
