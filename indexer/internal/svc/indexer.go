@@ -2,18 +2,18 @@ package svc
 
 import (
 	"context"
+	"dht-ocean/common/amqp"
 	"dht-ocean/common/model"
 	"dht-ocean/indexer/internal/config"
 	"encoding/json"
 	"time"
 
-	"github.com/ThreeDotsLabs/watermill"
-	"github.com/ThreeDotsLabs/watermill-amqp/v2/pkg/amqp"
 	"github.com/ThreeDotsLabs/watermill/message"
 	"github.com/juju/errors"
 	"github.com/kamva/mgm/v3"
 	"github.com/kamva/mgm/v3/operator"
 	"github.com/olivere/elastic/v7"
+	"github.com/rabbitmq/amqp091-go"
 	"github.com/zeromicro/go-zero/core/logx"
 	"github.com/zeromicro/go-zero/core/metric"
 	"go.mongodb.org/mongo-driver/bson"
@@ -53,19 +53,17 @@ type Indexer struct {
 	torrentCol *mgm.Collection
 	es         *elastic.Client
 
-	batchSize     int64
-	batch         []*model.Torrent
+	batchSize int64
+	batch     []*model.Torrent
+
 	delayedCursor *time.Time
 
-	publisher message.Publisher
-	router    *message.Router
+	publisher  message.Publisher
+	amqpClient *amqp.Client
+	deliveries <-chan amqp091.Delivery
 
 	statsTicker *time.Ticker
 }
-
-const (
-	handlerNameIndexer = "indexer"
-)
 
 func NewIndexer(ctx context.Context, conf *config.Config) (*Indexer, error) {
 	indexer := &Indexer{
@@ -84,26 +82,32 @@ func NewIndexer(ctx context.Context, conf *config.Config) (*Indexer, error) {
 		return nil, errors.Trace(err)
 	}
 
-	logger := watermill.NewStdLogger(false, false)
-	amqpConfig := amqp.NewDurablePubSubConfig(conf.AMQP, amqp.GenerateQueueNameConstant("indexer"))
-	amqpConfig.Consume.Qos.PrefetchCount = conf.AMQPPreFetch
-	indexer.publisher, err = amqp.NewPublisher(amqpConfig, logger)
+	client, err := amqp.NewClient(conf.AMQP)
 	if err != nil {
 		return nil, errors.Trace(err)
 	}
-	subscriber, err := amqp.NewSubscriber(amqpConfig, logger)
+	err = client.SetQos(int(conf.BatchSize))
 	if err != nil {
 		return nil, errors.Trace(err)
 	}
-	err = subscriber.SubscribeInitialize(model.TopicTrackerUpdated)
+	indexer.amqpClient = client
+	queueName := "indexer"
+	err = client.DeclareQueue(queueName)
 	if err != nil {
 		return nil, errors.Trace(err)
 	}
-	indexer.router, err = message.NewRouter(message.RouterConfig{}, logger)
+	err = client.QueueBind(queueName, model.TopicNewTorrent)
 	if err != nil {
 		return nil, errors.Trace(err)
 	}
-	indexer.router.AddNoPublisherHandler(handlerNameIndexer, model.TopicNewTorrent, subscriber, indexer.consumeTorrent)
+	err = client.QueueBind(queueName, model.TopicTrackerUpdated)
+	if err != nil {
+		return nil, errors.Trace(err)
+	}
+	indexer.deliveries, err = client.Consume(ctx, queueName, false)
+	if err != nil {
+		return nil, errors.Trace(err)
+	}
 
 	return indexer, nil
 }
@@ -126,34 +130,45 @@ func (i *Indexer) stats() {
 
 func (i *Indexer) Start() {
 	go i.stats()
-	err := i.router.Run(i.ctx)
-	if err != nil {
-		logx.Errorf("Router error: %+v", err)
+	for {
+		select {
+		case <-i.ctx.Done():
+			return
+		case delivery := <-i.deliveries:
+			t := &model.Torrent{}
+			err := json.Unmarshal(delivery.Body, t)
+			if err != nil {
+				logx.Infof("Failed to unmarshal torrent, drop. %s %+v", delivery.Body, err)
+				err := delivery.Ack(false)
+				if err != nil {
+					panic(err)
+				}
+				continue
+			}
+			i.batch = append(i.batch, t)
+			if len(i.batch) >= int(i.batchSize) {
+				err := i.batchSaveToIndex(i.batch)
+				if err != nil {
+					logx.Errorf("Failed to index %d torrents, nacked: %+v", len(i.batch), err)
+					err := delivery.Nack(true, true)
+					if err != nil {
+						panic(err)
+					}
+				} else {
+					i.delayedCursor = i.batch[0].UpdatedAt
+					err := delivery.Ack(true)
+					if err != nil {
+						panic(err)
+					}
+				}
+				i.batch = make([]*model.Torrent, 0, i.batchSize)
+			}
+		}
 	}
 }
 
 func (i *Indexer) Stop() {
 	i.cancel()
-}
-
-func (i *Indexer) consumeTorrent(msg *message.Message) error {
-	t := &model.Torrent{}
-	err := json.Unmarshal(msg.Payload, t)
-	if err != nil {
-		return errors.Trace(err)
-	}
-	if len(i.batch) < int(i.batchSize)-1 {
-		i.batch = append(i.batch, t)
-	} else {
-		// keep idempotent
-		err := i.batchSaveToIndex(append(i.batch, t))
-		if err != nil {
-			return errors.Trace(err)
-		}
-		i.delayedCursor = i.batch[0].UpdatedAt
-		i.batch = make([]*model.Torrent, 0, i.batchSize)
-	}
-	return nil
 }
 
 func (i *Indexer) batchSaveToIndex(torrents []*model.Torrent) error {
