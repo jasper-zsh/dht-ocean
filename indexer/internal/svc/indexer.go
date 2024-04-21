@@ -187,26 +187,28 @@ func (i *Indexer) batchSaveToIndex(torrents []*model.Torrent) error {
 	}
 	indexEndAt := time.Now().UnixMilli()
 	metricHistogram.Observe(indexEndAt-startAt, "index_cost")
-	col := mgm.Coll(&model.Torrent{})
-	result, err := col.UpdateMany(i.ctx, bson.M{
-		"_id": bson.M{
-			operator.In: ids,
-		},
-	}, bson.M{
-		operator.Set: bson.M{
-			"search_updated": true,
-		},
-	})
-	if err != nil {
-		logx.Errorf("Failed to update search_updated")
-		return errors.Trace(err)
-	}
-	if result.MatchedCount != int64(len(torrents)) {
-		logx.Infof("Updated less search flag than indexed: %d %d", result.MatchedCount, len(torrents))
-	}
-	searchUpdatedAt := time.Now().UnixMilli()
-	metricHistogram.Observe(searchUpdatedAt-indexEndAt, "indexed_flag_cost")
 	metricCounter.Add(float64(len(torrents)), "torrent_indexed")
+	go func() {
+		result, err := i.torrentCol.UpdateMany(i.ctx, bson.M{
+			"_id": bson.M{
+				operator.In: ids,
+			},
+		}, bson.M{
+			operator.Set: bson.M{
+				"search_updated": true,
+			},
+		})
+		if err != nil {
+			logx.Errorf("Failed to update search_updated")
+			return
+		}
+		if result.MatchedCount != int64(len(torrents)) {
+			logx.Infof("Updated less search flag than indexed: %d %d", result.MatchedCount, len(torrents))
+		}
+		searchUpdatedAt := time.Now().UnixMilli()
+		metricCounter.Add(float64(len(torrents)), "indexed_flag_updated")
+		metricHistogram.Observe(searchUpdatedAt-indexEndAt, "indexed_flag_cost")
+	}()
 	return nil
 }
 
