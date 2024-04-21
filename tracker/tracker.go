@@ -15,6 +15,7 @@ import (
 )
 
 var configFile = flag.String("f", "etc/tracker.yaml", "the config file")
+var recoverFlag = flag.Bool("recover", false, "Recover not tried torrents")
 
 func main() {
 	flag.Parse()
@@ -31,6 +32,16 @@ func main() {
 
 	ctx, _ := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
 	svcCtx := svc.NewServiceContext(ctx, c)
+
+	if *recoverFlag {
+		err := svcCtx.Updater.Recover()
+		if err != nil {
+			logx.Errorf("Failed to recover torrents: %+v", err)
+			panic(err)
+		}
+		return
+	}
+
 	err = svcCtx.Tracker.Start()
 	if err != nil {
 		panic(err)

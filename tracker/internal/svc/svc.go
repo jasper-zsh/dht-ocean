@@ -3,20 +3,24 @@ package svc
 import (
 	"context"
 	"dht-ocean/common/bittorrent/tracker"
+	"dht-ocean/common/model"
 	"dht-ocean/tracker/internal/config"
 
+	"github.com/kamva/mgm/v3"
 	"github.com/zeromicro/go-zero/core/logx"
 )
 
 type ServiceContext struct {
-	Config  config.Config
-	Tracker tracker.Tracker
-	Updater *TrackerUpdater
+	Config      config.Config
+	Tracker     tracker.Tracker
+	Updater     *TrackerUpdater
+	TorrentColl *mgm.Collection
 }
 
 func NewServiceContext(ctx context.Context, c config.Config) *ServiceContext {
 	svcCtx := &ServiceContext{
-		Config: c,
+		Config:      c,
+		TorrentColl: mgm.Coll(&model.Torrent{}),
 	}
 	tr, err := tracker.NewUDPTracker(ctx, tracker.UDPTrackerConfig{
 		Addr:      c.Tracker,

@@ -174,8 +174,10 @@ func (i *Indexer) Stop() {
 func (i *Indexer) batchSaveToIndex(torrents []*model.Torrent) error {
 	startAt := time.Now().UnixMilli()
 	reqs := make([]elastic.BulkableRequest, 0, len(torrents))
+	ids := make([]string, 0, len(torrents))
 	for _, torrent := range torrents {
 		torrent.SearchUpdated = true
+		ids = append(ids, torrent.InfoHash)
 		reqs = append(reqs, elastic.NewBulkUpdateRequest().Index("torrents").Id(torrent.InfoHash).Doc(torrent).DocAsUpsert(true))
 	}
 	_, err := i.es.Bulk().Add(reqs...).Do(i.ctx)
@@ -183,20 +185,27 @@ func (i *Indexer) batchSaveToIndex(torrents []*model.Torrent) error {
 		logx.Errorf("Failed to index %d torrents. %+v", len(torrents), err)
 		return err
 	}
+	indexEndAt := time.Now().UnixMilli()
+	metricHistogram.Observe(indexEndAt-startAt, "index_cost")
 	col := mgm.Coll(&model.Torrent{})
-	for _, torrent := range torrents {
-		_, err = col.UpdateByID(context.TODO(), torrent.InfoHash, bson.M{
-			operator.Set: bson.M{
-				"search_updated": true,
-			},
-		})
-		if err != nil {
-			logx.Errorf("Failed to update search_updated")
-			return err
-		}
+	result, err := col.UpdateMany(i.ctx, bson.M{
+		"_id": bson.M{
+			operator.In: ids,
+		},
+	}, bson.M{
+		operator.Set: bson.M{
+			"search_updated": true,
+		},
+	})
+	if err != nil {
+		logx.Errorf("Failed to update search_updated")
+		return errors.Trace(err)
 	}
-	endAt := time.Now().UnixMilli()
-	metricHistogram.Observe(endAt-startAt, "index_cost")
+	if result.MatchedCount != int64(len(torrents)) {
+		logx.Infof("Updated less search flag than indexed: %d %d", result.MatchedCount, len(torrents))
+	}
+	searchUpdatedAt := time.Now().UnixMilli()
+	metricHistogram.Observe(searchUpdatedAt-indexEndAt, "indexed_flag_cost")
 	metricCounter.Add(float64(len(torrents)), "torrent_indexed")
 	return nil
 }

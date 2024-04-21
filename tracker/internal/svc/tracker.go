@@ -265,3 +265,40 @@ func (u *TrackerUpdater) refreshTracker() {
 		logx.Errorf("Failed to scrape update tracker: %+v", err)
 	}
 }
+
+func (u *TrackerUpdater) Recover() error {
+	for {
+		torrents := make([]*model.Torrent, 0)
+		err := u.torrentCol.SimpleFind(&torrents, bson.M{
+			"tracker_last_tried_at": nil,
+		}, &options.FindOptions{
+			Limit: &u.trackerLimit,
+		})
+		if err != nil {
+			return errors.Trace(err)
+		}
+		if len(torrents) == 0 {
+			return nil
+		}
+		for _, torrent := range torrents {
+			raw, err := json.Marshal(torrent)
+			if err != nil {
+				return errors.Trace(err)
+			}
+			msg := message.NewMessage(watermill.NewUUID(), raw)
+			err = u.publisher.Publish(model.TopicNewTorrent, msg)
+			if err != nil {
+				return errors.Trace(err)
+			}
+			_, err = u.torrentCol.UpdateByID(u.ctx, torrent.InfoHash, bson.M{
+				operator.Set: bson.M{
+					"tracker_last_tried_at": time.Now(),
+				},
+			})
+			if err != nil {
+				return errors.Trace(err)
+			}
+		}
+		logx.Infof("Recovered %d torrents", len(torrents))
+	}
+}
