@@ -5,7 +5,6 @@ import (
 	"dht-ocean/common/model"
 	"encoding/hex"
 	"encoding/json"
-	"sync"
 	"time"
 
 	"github.com/ThreeDotsLabs/watermill"
@@ -54,6 +53,8 @@ type TrackerUpdater struct {
 
 	publisher message.Publisher
 	router    *message.Router
+
+	needUpdate chan struct{}
 }
 
 const (
@@ -66,6 +67,7 @@ func NewTrackerUpdater(ctx context.Context, svcCtx *ServiceContext, limit int64)
 		trackerLimit: limit,
 		batch:        make([]*model.Torrent, 0, limit),
 		torrentCol:   mgm.Coll(&model.Torrent{}),
+		needUpdate:   make(chan struct{}, 1),
 	}
 	r.ctx, r.cancel = context.WithCancel(ctx)
 
@@ -93,6 +95,7 @@ func NewTrackerUpdater(ctx context.Context, svcCtx *ServiceContext, limit int64)
 func (u *TrackerUpdater) Start() {
 	go u.handleResult()
 	go u.fetch()
+	u.needUpdate <- struct{}{}
 	err := u.router.Run(u.ctx)
 	if err != nil {
 		logx.Errorf("Router error: %+v", err)
@@ -108,7 +111,7 @@ func (u *TrackerUpdater) fetch() {
 		select {
 		case <-u.ctx.Done():
 			return
-		default:
+		case <-u.needUpdate:
 			u.refreshTracker()
 		}
 	}
@@ -169,7 +172,7 @@ func (u *TrackerUpdater) handleResult() {
 						TrackerUpdatedAt: now,
 						UpdatedAt:        now,
 					},
-				})
+				}, options.FindOneAndUpdate().SetReturnDocument(options.After))
 				err := result.Err()
 				if err != nil {
 					if err == mongo.ErrNoDocuments {
@@ -233,33 +236,44 @@ func (l *TrackerUpdater) getRecords(size int64) ([]*model.Torrent, error) {
 }
 
 func (u *TrackerUpdater) refreshTracker() {
-	records, err := u.getRecords(u.trackerLimit)
+	var records []*model.Torrent
+	var err error
+	defer func() {
+		if len(records) > 0 {
+			u.needUpdate <- struct{}{}
+		} else {
+			logx.Infof("No torrent need to update tracker, wait for 10 seconds...")
+			time.AfterFunc(10*time.Second, func() {
+				u.needUpdate <- struct{}{}
+			})
+		}
+	}()
+	records, err = u.getRecords(u.trackerLimit)
 	if err != nil {
 		logx.Errorf("Failed to fetch torrents for tracker: %+v", err)
 		return
 	}
-	now := time.Now()
-	wait := sync.WaitGroup{}
 
+	ids := make([]string, 0, len(records))
 	infoHashes := make([][]byte, 0, len(records))
 	for _, r := range records {
-		wait.Add(1)
-		infoHash := r.InfoHash
-		go func() {
-			defer wait.Done()
-			_, err := u.torrentCol.UpdateByID(u.ctx, infoHash, bson.M{
-				operator.Set: bson.M{
-					"tracker_last_tried_at": now,
-				},
-			})
-			if err != nil {
-				logx.Errorf("Failed to update tracker last tries time for %s", r.InfoHash)
-			}
-		}()
+		ids = append(ids, r.InfoHash)
 		b, _ := hex.DecodeString(r.InfoHash)
 		infoHashes = append(infoHashes, b)
 	}
-	wait.Wait()
+	_, err = u.torrentCol.UpdateMany(u.ctx, bson.M{
+		"_id": bson.M{
+			operator.In: ids,
+		},
+	}, bson.M{
+		operator.CurrentDate: bson.M{
+			"tracker_last_tried_at": true,
+		},
+	})
+	if err != nil {
+		logx.Errorf("Failed to update tracker last tried at: %+v", err)
+		return
+	}
 	err = u.svcCtx.Tracker.Scrape(infoHashes)
 	if err != nil {
 		logx.Errorf("Failed to scrape update tracker: %+v", err)
@@ -280,24 +294,31 @@ func (u *TrackerUpdater) Recover() error {
 		if len(torrents) == 0 {
 			return nil
 		}
+		ids := make([]string, 0, len(torrents))
 		for _, torrent := range torrents {
 			raw, err := json.Marshal(torrent)
 			if err != nil {
 				return errors.Trace(err)
 			}
+			ids = append(ids, torrent.InfoHash)
 			msg := message.NewMessage(watermill.NewUUID(), raw)
 			err = u.publisher.Publish(model.TopicNewTorrent, msg)
 			if err != nil {
 				return errors.Trace(err)
 			}
-			_, err = u.torrentCol.UpdateByID(u.ctx, torrent.InfoHash, bson.M{
-				operator.Set: bson.M{
-					"tracker_last_tried_at": time.Now(),
-				},
-			})
-			if err != nil {
-				return errors.Trace(err)
-			}
+		}
+		_, err = u.torrentCol.UpdateMany(u.ctx, bson.M{
+			"_id": bson.M{
+				operator.In: ids,
+			},
+		}, bson.M{
+			operator.CurrentDate: bson.M{
+				"tracker_last_tried_at": true,
+			},
+		})
+		if err != nil {
+			logx.Errorf("Failed to update tracker last tried at: %+v", err)
+			return errors.Trace(err)
 		}
 		logx.Infof("Recovered %d torrents", len(torrents))
 	}
